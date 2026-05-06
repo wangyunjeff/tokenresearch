@@ -82,10 +82,11 @@ const backendModeDBTimeout = 5 * time.Second
 
 // cachedGatewayForwardingSettings 缓存网关转发行为设置（进程内缓存，60s TTL）
 type cachedGatewayForwardingSettings struct {
-	fingerprintUnification bool
-	metadataPassthrough    bool
-	cchSigning             bool
-	expiresAt              int64 // unix nano
+	fingerprintUnification       bool
+	metadataPassthrough          bool
+	cchSigning                   bool
+	anthropicCacheTTL1hInjection bool
+	expiresAt                    int64 // unix nano
 }
 
 var gatewayForwardingCache atomic.Value // *cachedGatewayForwardingSettings
@@ -454,6 +455,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyChannelMonitorEnabled,
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
 		SettingKeyAvailableChannelsEnabled,
+		SettingKeyAffiliateEnabled,
 	}
 
 	settings, err := s.settingRepo.GetMultiple(ctx, keys)
@@ -541,6 +543,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ChannelMonitorDefaultIntervalSeconds: parseChannelMonitorInterval(settings[SettingKeyChannelMonitorDefaultIntervalSeconds]),
 
 		AvailableChannelsEnabled: settings[SettingKeyAvailableChannelsEnabled] == "true",
+
+		AffiliateEnabled: settings[SettingKeyAffiliateEnabled] == "true",
 	}, nil
 }
 
@@ -687,6 +691,7 @@ type PublicSettingsInjectionPayload struct {
 	ChannelMonitorEnabled                bool `json:"channel_monitor_enabled"`
 	ChannelMonitorDefaultIntervalSeconds int  `json:"channel_monitor_default_interval_seconds"`
 	AvailableChannelsEnabled             bool `json:"available_channels_enabled"`
+	AffiliateEnabled                     bool `json:"affiliate_enabled"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection.
@@ -739,6 +744,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ChannelMonitorEnabled:                settings.ChannelMonitorEnabled,
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
+		AffiliateEnabled:                     settings.AffiliateEnabled,
 	}, nil
 }
 
@@ -1170,6 +1176,24 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyDefaultBalance] = strconv.FormatFloat(settings.DefaultBalance, 'f', 8, 64)
 	settings.AffiliateRebateRate = clampAffiliateRebateRate(settings.AffiliateRebateRate)
 	updates[SettingKeyAffiliateRebateRate] = strconv.FormatFloat(settings.AffiliateRebateRate, 'f', 8, 64)
+	if settings.AffiliateRebateFreezeHours < 0 {
+		settings.AffiliateRebateFreezeHours = AffiliateRebateFreezeHoursDefault
+	}
+	if settings.AffiliateRebateFreezeHours > AffiliateRebateFreezeHoursMax {
+		settings.AffiliateRebateFreezeHours = AffiliateRebateFreezeHoursMax
+	}
+	updates[SettingKeyAffiliateRebateFreezeHours] = strconv.Itoa(settings.AffiliateRebateFreezeHours)
+	if settings.AffiliateRebateDurationDays < 0 {
+		settings.AffiliateRebateDurationDays = AffiliateRebateDurationDaysDefault
+	}
+	if settings.AffiliateRebateDurationDays > AffiliateRebateDurationDaysMax {
+		settings.AffiliateRebateDurationDays = AffiliateRebateDurationDaysMax
+	}
+	updates[SettingKeyAffiliateRebateDurationDays] = strconv.Itoa(settings.AffiliateRebateDurationDays)
+	if settings.AffiliateRebatePerInviteeCap < 0 {
+		settings.AffiliateRebatePerInviteeCap = AffiliateRebatePerInviteeCapDefault
+	}
+	updates[SettingKeyAffiliateRebatePerInviteeCap] = strconv.FormatFloat(settings.AffiliateRebatePerInviteeCap, 'f', 8, 64)
 	updates[SettingKeyDefaultUserRPMLimit] = strconv.Itoa(settings.DefaultUserRPMLimit)
 	defaultSubsJSON, err := json.Marshal(settings.DefaultSubscriptions)
 	if err != nil {
@@ -1205,6 +1229,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	// Available channels feature switch
 	updates[SettingKeyAvailableChannelsEnabled] = strconv.FormatBool(settings.AvailableChannelsEnabled)
 
+	// Affiliate (邀请返利) feature switch
+	updates[SettingKeyAffiliateEnabled] = strconv.FormatBool(settings.AffiliateEnabled)
+
 	// Claude Code version check
 	updates[SettingKeyMinClaudeCodeVersion] = settings.MinClaudeCodeVersion
 	updates[SettingKeyMaxClaudeCodeVersion] = settings.MaxClaudeCodeVersion
@@ -1219,6 +1246,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyEnableFingerprintUnification] = strconv.FormatBool(settings.EnableFingerprintUnification)
 	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
 	updates[SettingKeyEnableCCHSigning] = strconv.FormatBool(settings.EnableCCHSigning)
+	updates[SettingKeyEnableAnthropicCacheTTL1hInjection] = strconv.FormatBool(settings.EnableAnthropicCacheTTL1hInjection)
 	updates[SettingPaymentVisibleMethodAlipaySource] = settings.PaymentVisibleMethodAlipaySource
 	updates[SettingPaymentVisibleMethodWxpaySource] = settings.PaymentVisibleMethodWxpaySource
 	updates[SettingPaymentVisibleMethodAlipayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodAlipayEnabled)
@@ -1279,10 +1307,11 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	})
 	gatewayForwardingSF.Forget("gateway_forwarding")
 	gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
-		fingerprintUnification: settings.EnableFingerprintUnification,
-		metadataPassthrough:    settings.EnableMetadataPassthrough,
-		cchSigning:             settings.EnableCCHSigning,
-		expiresAt:              time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
+		fingerprintUnification:       settings.EnableFingerprintUnification,
+		metadataPassthrough:          settings.EnableMetadataPassthrough,
+		cchSigning:                   settings.EnableCCHSigning,
+		anthropicCacheTTL1hInjection: settings.EnableAnthropicCacheTTL1hInjection,
+		expiresAt:                    time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 	})
 	openAIAdvancedSchedulerSettingSF.Forget(openAIAdvancedSchedulerSettingKey)
 	openAIAdvancedSchedulerSettingCache.Store(&cachedOpenAIAdvancedSchedulerSetting{
@@ -1389,22 +1418,30 @@ func (s *SettingService) IsBackendModeEnabled(ctx context.Context) bool {
 	return false
 }
 
-// GetGatewayForwardingSettings returns cached gateway forwarding settings.
-// Uses in-process atomic.Value cache with 60s TTL, zero-lock hot path.
-// Returns (fingerprintUnification, metadataPassthrough, cchSigning).
-func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fingerprintUnification, metadataPassthrough, cchSigning bool) {
+type gatewayForwardingSettingsResult struct {
+	fp, mp, cch, cacheTTL1h bool
+}
+
+func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context) gatewayForwardingSettingsResult {
 	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
-			return cached.fingerprintUnification, cached.metadataPassthrough, cached.cchSigning
+			return gatewayForwardingSettingsResult{
+				fp:         cached.fingerprintUnification,
+				mp:         cached.metadataPassthrough,
+				cch:        cached.cchSigning,
+				cacheTTL1h: cached.anthropicCacheTTL1hInjection,
+			}
 		}
-	}
-	type gwfResult struct {
-		fp, mp, cch bool
 	}
 	val, _, _ := gatewayForwardingSF.Do("gateway_forwarding", func() (any, error) {
 		if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 			if time.Now().UnixNano() < cached.expiresAt {
-				return gwfResult{cached.fingerprintUnification, cached.metadataPassthrough, cached.cchSigning}, nil
+				return gatewayForwardingSettingsResult{
+					fp:         cached.fingerprintUnification,
+					mp:         cached.metadataPassthrough,
+					cch:        cached.cchSigning,
+					cacheTTL1h: cached.anthropicCacheTTL1hInjection,
+				}, nil
 			}
 		}
 		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gatewayForwardingDBTimeout)
@@ -1413,16 +1450,18 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 			SettingKeyEnableFingerprintUnification,
 			SettingKeyEnableMetadataPassthrough,
 			SettingKeyEnableCCHSigning,
+			SettingKeyEnableAnthropicCacheTTL1hInjection,
 		})
 		if err != nil {
 			slog.Warn("failed to get gateway forwarding settings", "error", err)
 			gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
-				fingerprintUnification: true,
-				metadataPassthrough:    false,
-				cchSigning:             false,
-				expiresAt:              time.Now().Add(gatewayForwardingErrorTTL).UnixNano(),
+				fingerprintUnification:       true,
+				metadataPassthrough:          false,
+				cchSigning:                   false,
+				anthropicCacheTTL1hInjection: false,
+				expiresAt:                    time.Now().Add(gatewayForwardingErrorTTL).UnixNano(),
 			})
-			return gwfResult{true, false, false}, nil
+			return gatewayForwardingSettingsResult{fp: true}, nil
 		}
 		fp := true
 		if v, ok := values[SettingKeyEnableFingerprintUnification]; ok && v != "" {
@@ -1430,18 +1469,33 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 		}
 		mp := values[SettingKeyEnableMetadataPassthrough] == "true"
 		cch := values[SettingKeyEnableCCHSigning] == "true"
+		cacheTTL1h := values[SettingKeyEnableAnthropicCacheTTL1hInjection] == "true"
 		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
-			fingerprintUnification: fp,
-			metadataPassthrough:    mp,
-			cchSigning:             cch,
-			expiresAt:              time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
+			fingerprintUnification:       fp,
+			metadataPassthrough:          mp,
+			cchSigning:                   cch,
+			anthropicCacheTTL1hInjection: cacheTTL1h,
+			expiresAt:                    time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
-		return gwfResult{fp, mp, cch}, nil
+		return gatewayForwardingSettingsResult{fp: fp, mp: mp, cch: cch, cacheTTL1h: cacheTTL1h}, nil
 	})
-	if r, ok := val.(gwfResult); ok {
-		return r.fp, r.mp, r.cch
+	if r, ok := val.(gatewayForwardingSettingsResult); ok {
+		return r
 	}
-	return true, false, false // fail-open defaults
+	return gatewayForwardingSettingsResult{fp: true}
+}
+
+// GetGatewayForwardingSettings returns cached gateway forwarding settings.
+// Uses in-process atomic.Value cache with 60s TTL, zero-lock hot path.
+// Returns (fingerprintUnification, metadataPassthrough, cchSigning).
+func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fingerprintUnification, metadataPassthrough, cchSigning bool) {
+	result := s.getGatewayForwardingSettingsCached(ctx)
+	return result.fp, result.mp, result.cch
+}
+
+// IsAnthropicCacheTTL1hInjectionEnabled 检查是否对 Anthropic OAuth/SetupToken 请求体注入 1h cache_control ttl。
+func (s *SettingService) IsAnthropicCacheTTL1hInjectionEnabled(ctx context.Context) bool {
+	return s.getGatewayForwardingSettingsCached(ctx).cacheTTL1h
 }
 
 // IsEmailVerifyEnabled 检查是否开启邮件验证
@@ -1478,6 +1532,78 @@ func (s *SettingService) IsInvitationCodeEnabled(ctx context.Context) bool {
 		return false // 默认关闭
 	}
 	return value == "true"
+}
+
+// IsAffiliateEnabled 检查是否启用邀请返利功能（总开关）
+func (s *SettingService) IsAffiliateEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateEnabled)
+	if err != nil {
+		return false // 默认关闭
+	}
+	return value == "true"
+}
+
+// GetAffiliateRebateRatePercent 读取并 clamp 全局返利比例。
+// 解析失败、缺失或越界都回退到 AffiliateRebateRateDefault — 该比例从不抛错，
+// 调用方只关心一个可用的数值。
+func (s *SettingService) GetAffiliateRebateRatePercent(ctx context.Context) float64 {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateRebateRate)
+	if err != nil {
+		return AffiliateRebateRateDefault
+	}
+	rate, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || math.IsNaN(rate) || math.IsInf(rate, 0) {
+		return AffiliateRebateRateDefault
+	}
+	return clampAffiliateRebateRate(rate)
+}
+
+// GetAffiliateRebateFreezeHours 返回返利冻结期（小时）。
+// 返回 0 表示不冻结（向后兼容）。
+func (s *SettingService) GetAffiliateRebateFreezeHours(ctx context.Context) int {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateRebateFreezeHours)
+	if err != nil {
+		return AffiliateRebateFreezeHoursDefault
+	}
+	hours, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || hours < 0 {
+		return AffiliateRebateFreezeHoursDefault
+	}
+	if hours > AffiliateRebateFreezeHoursMax {
+		return AffiliateRebateFreezeHoursMax
+	}
+	return hours
+}
+
+// GetAffiliateRebateDurationDays 返回返利有效期（天）。
+// 返回 0 表示永久有效。
+func (s *SettingService) GetAffiliateRebateDurationDays(ctx context.Context) int {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateRebateDurationDays)
+	if err != nil {
+		return AffiliateRebateDurationDaysDefault
+	}
+	days, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || days < 0 {
+		return AffiliateRebateDurationDaysDefault
+	}
+	if days > AffiliateRebateDurationDaysMax {
+		return AffiliateRebateDurationDaysMax
+	}
+	return days
+}
+
+// GetAffiliateRebatePerInviteeCap 返回单人返利上限。
+// 返回 0 表示无上限。
+func (s *SettingService) GetAffiliateRebatePerInviteeCap(ctx context.Context) float64 {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateRebatePerInviteeCap)
+	if err != nil {
+		return AffiliateRebatePerInviteeCapDefault
+	}
+	cap, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || cap < 0 || math.IsNaN(cap) || math.IsInf(cap, 0) {
+		return AffiliateRebatePerInviteeCapDefault
+	}
+	return cap
 }
 
 // IsPasswordResetEnabled 检查是否启用密码重置功能
@@ -1723,6 +1849,9 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyDefaultConcurrency:                       strconv.Itoa(s.cfg.Default.UserConcurrency),
 		SettingKeyDefaultBalance:                           strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
 		SettingKeyAffiliateRebateRate:                      strconv.FormatFloat(AffiliateRebateRateDefault, 'f', 8, 64),
+		SettingKeyAffiliateRebateFreezeHours:               strconv.Itoa(AffiliateRebateFreezeHoursDefault),
+		SettingKeyAffiliateRebateDurationDays:              strconv.Itoa(AffiliateRebateDurationDaysDefault),
+		SettingKeyAffiliateRebatePerInviteeCap:             strconv.FormatFloat(AffiliateRebatePerInviteeCapDefault, 'f', 2, 64),
 		SettingKeyDefaultUserRPMLimit:                      "0",
 		SettingKeyDefaultSubscriptions:                     "[]",
 		SettingKeyAuthSourceDefaultEmailBalance:            "0",
@@ -1771,17 +1900,21 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		// Available channels feature (default disabled; opt-in)
 		SettingKeyAvailableChannelsEnabled: "false",
 
+		// Affiliate (邀请返利) feature (default disabled; opt-in)
+		SettingKeyAffiliateEnabled: "false",
+
 		// Claude Code version check (default: empty = disabled)
 		SettingKeyMinClaudeCodeVersion: "",
 		SettingKeyMaxClaudeCodeVersion: "",
 
 		// 分组隔离（默认不允许未分组 Key 调度）
-		SettingKeyAllowUngroupedKeyScheduling:    "false",
-		SettingPaymentVisibleMethodAlipaySource:  "",
-		SettingPaymentVisibleMethodWxpaySource:   "",
-		SettingPaymentVisibleMethodAlipayEnabled: "false",
-		SettingPaymentVisibleMethodWxpayEnabled:  "false",
-		openAIAdvancedSchedulerSettingKey:        "false",
+		SettingKeyAllowUngroupedKeyScheduling:        "false",
+		SettingKeyEnableAnthropicCacheTTL1hInjection: "false",
+		SettingPaymentVisibleMethodAlipaySource:      "",
+		SettingPaymentVisibleMethodWxpaySource:       "",
+		SettingPaymentVisibleMethodAlipayEnabled:     "false",
+		SettingPaymentVisibleMethodWxpayEnabled:      "false",
+		openAIAdvancedSchedulerSettingKey:            "false",
 	}
 
 	return s.settingRepo.SetMultiple(ctx, defaults)
@@ -1854,6 +1987,21 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		result.AffiliateRebateRate = clampAffiliateRebateRate(rebateRate)
 	} else {
 		result.AffiliateRebateRate = AffiliateRebateRateDefault
+	}
+	if freezeHours, err := strconv.Atoi(settings[SettingKeyAffiliateRebateFreezeHours]); err == nil && freezeHours >= 0 {
+		if freezeHours > AffiliateRebateFreezeHoursMax {
+			freezeHours = AffiliateRebateFreezeHoursMax
+		}
+		result.AffiliateRebateFreezeHours = freezeHours
+	}
+	if durationDays, err := strconv.Atoi(settings[SettingKeyAffiliateRebateDurationDays]); err == nil && durationDays >= 0 {
+		if durationDays > AffiliateRebateDurationDaysMax {
+			durationDays = AffiliateRebateDurationDaysMax
+		}
+		result.AffiliateRebateDurationDays = durationDays
+	}
+	if perInviteeCap, err := strconv.ParseFloat(settings[SettingKeyAffiliateRebatePerInviteeCap], 64); err == nil && perInviteeCap >= 0 {
+		result.AffiliateRebatePerInviteeCap = perInviteeCap
 	}
 	result.DefaultSubscriptions = parseDefaultSubscriptions(settings[SettingKeyDefaultSubscriptions])
 
@@ -2091,6 +2239,9 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// Available channels feature (default: disabled; strict true)
 	result.AvailableChannelsEnabled = settings[SettingKeyAvailableChannelsEnabled] == "true"
 
+	// Affiliate (邀请返利) feature (default: disabled; strict true)
+	result.AffiliateEnabled = settings[SettingKeyAffiliateEnabled] == "true"
+
 	// Claude Code version check
 	result.MinClaudeCodeVersion = settings[SettingKeyMinClaudeCodeVersion]
 	result.MaxClaudeCodeVersion = settings[SettingKeyMaxClaudeCodeVersion]
@@ -2106,6 +2257,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
 	result.EnableCCHSigning = settings[SettingKeyEnableCCHSigning] == "true"
+	result.EnableAnthropicCacheTTL1hInjection = settings[SettingKeyEnableAnthropicCacheTTL1hInjection] == "true"
 
 	// Web search emulation: quick enabled check from the JSON config
 	if raw := settings[SettingKeyWebSearchEmulationConfig]; raw != "" {
@@ -3135,6 +3287,84 @@ func (s *SettingService) SetBetaPolicySettings(ctx context.Context, settings *Be
 	}
 
 	return s.settingRepo.Set(ctx, SettingKeyBetaPolicySettings, string(data))
+}
+
+// GetOpenAIFastPolicySettings 获取 OpenAI fast 策略配置
+func (s *SettingService) GetOpenAIFastPolicySettings(ctx context.Context) (*OpenAIFastPolicySettings, error) {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyOpenAIFastPolicySettings)
+	if err != nil {
+		if errors.Is(err, ErrSettingNotFound) {
+			return DefaultOpenAIFastPolicySettings(), nil
+		}
+		return nil, fmt.Errorf("get openai fast policy settings: %w", err)
+	}
+	if value == "" {
+		return DefaultOpenAIFastPolicySettings(), nil
+	}
+
+	var settings OpenAIFastPolicySettings
+	if err := json.Unmarshal([]byte(value), &settings); err != nil {
+		// JSON 损坏时静默 fallback 到默认配置会让策略意外失效（管理员配
+		// 置的 block/filter 规则被忽略）。记录 Warn 让运维能在出现异常
+		// 行为时定位到 settings 表里的脏数据。
+		slog.Warn("failed to unmarshal openai fast policy settings, falling back to defaults",
+			"error", err,
+			"key", SettingKeyOpenAIFastPolicySettings)
+		return DefaultOpenAIFastPolicySettings(), nil
+	}
+
+	return &settings, nil
+}
+
+// SetOpenAIFastPolicySettings 设置 OpenAI fast 策略配置
+func (s *SettingService) SetOpenAIFastPolicySettings(ctx context.Context, settings *OpenAIFastPolicySettings) error {
+	if settings == nil {
+		return fmt.Errorf("settings cannot be nil")
+	}
+
+	validActions := map[string]bool{
+		BetaPolicyActionPass: true, BetaPolicyActionFilter: true, BetaPolicyActionBlock: true,
+	}
+	validScopes := map[string]bool{
+		BetaPolicyScopeAll: true, BetaPolicyScopeOAuth: true, BetaPolicyScopeAPIKey: true, BetaPolicyScopeBedrock: true,
+	}
+	validTiers := map[string]bool{
+		OpenAIFastTierAny: true, OpenAIFastTierPriority: true, OpenAIFastTierFlex: true,
+	}
+
+	for i, rule := range settings.Rules {
+		tier := strings.ToLower(strings.TrimSpace(rule.ServiceTier))
+		if tier == "" {
+			tier = OpenAIFastTierAny
+		}
+		if !validTiers[tier] {
+			return fmt.Errorf("rule[%d]: invalid service_tier %q", i, rule.ServiceTier)
+		}
+		settings.Rules[i].ServiceTier = tier
+		if !validActions[rule.Action] {
+			return fmt.Errorf("rule[%d]: invalid action %q", i, rule.Action)
+		}
+		if !validScopes[rule.Scope] {
+			return fmt.Errorf("rule[%d]: invalid scope %q", i, rule.Scope)
+		}
+		for j, pattern := range rule.ModelWhitelist {
+			trimmed := strings.TrimSpace(pattern)
+			if trimmed == "" {
+				return fmt.Errorf("rule[%d]: model_whitelist[%d] cannot be empty", i, j)
+			}
+			settings.Rules[i].ModelWhitelist[j] = trimmed
+		}
+		if rule.FallbackAction != "" && !validActions[rule.FallbackAction] {
+			return fmt.Errorf("rule[%d]: invalid fallback_action %q", i, rule.FallbackAction)
+		}
+	}
+
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return fmt.Errorf("marshal openai fast policy settings: %w", err)
+	}
+
+	return s.settingRepo.Set(ctx, SettingKeyOpenAIFastPolicySettings, string(data))
 }
 
 // SetStreamTimeoutSettings 设置流超时处理配置
