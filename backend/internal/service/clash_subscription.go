@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -25,13 +26,22 @@ import (
 )
 
 const (
-	clashSidecarRoot           = "data/proxy_sidecars"
+	clashSidecarRootEnv        = "CLASH_SIDECAR_ROOT"
+	clashDefaultSidecarRoot    = "/mnt/data/service_codex2/backend/data/proxy_sidecars"
 	clashSidecarStartHTTPPort  = 17801
 	clashSidecarStartSocksPort = 17901
 	clashSidecarStartCtlPort   = 19091
 	clashImportMaxBodyBytes    = 10 << 20
 	clashImportMaxNodes        = 300
 	clashImportDefaultUA       = "clash-verge/v2.5.1"
+	clashImportBenchMinSeconds = 60
+	clashImportBenchMaxSeconds = 300
+	clashImportBenchDefaultTop = 10
+	clashImportBenchMaxTop     = 50
+	clashImportBenchTarget     = "https://api.openai.com/v1/models"
+	clashImportBenchMihomoBin  = "/usr/bin/verge-mihomo"
+	clashImportBenchClashBin   = "/home/ike/Downloads/clash/clash-linux-amd64-v1.18.0"
+	clashImportBenchNodeKey    = "_service_codex2_benchmark_key"
 )
 
 var clashSidecarKeySanitizer = regexp.MustCompile(`[^a-z0-9]+`)
@@ -45,6 +55,7 @@ type ClashSubscriptionImportInput struct {
 	Limit           int
 	Test            bool
 	RestartSidecars bool
+	Benchmark       ClashSubscriptionBenchmarkInput
 }
 
 type ClashSubscriptionImportResult struct {
@@ -58,25 +69,71 @@ type ClashSubscriptionImportResult struct {
 	Restarted       bool                          `json:"restarted"`
 	RestartError    string                        `json:"restart_error,omitempty"`
 	RestartCommand  string                        `json:"restart_command"`
+	Benchmark       *ClashSubscriptionBenchmark   `json:"benchmark,omitempty"`
 	Items           []ClashSubscriptionImportItem `json:"items"`
 }
 
 type ClashSubscriptionImportItem struct {
-	Name           string           `json:"name"`
-	Key            string           `json:"key"`
-	Type           string           `json:"type"`
-	ProxyID        int64            `json:"proxy_id,omitempty"`
-	Action         string           `json:"action"`
-	SocksURL       string           `json:"socks_url,omitempty"`
-	HTTPPort       int              `json:"http_port,omitempty"`
-	SocksPort      int              `json:"socks_port,omitempty"`
-	ControllerPort int              `json:"controller_port,omitempty"`
-	Error          string           `json:"error,omitempty"`
-	Test           *ProxyTestResult `json:"test,omitempty"`
+	Name           string                    `json:"name"`
+	Key            string                    `json:"key"`
+	Type           string                    `json:"type"`
+	ProxyID        int64                     `json:"proxy_id,omitempty"`
+	Action         string                    `json:"action"`
+	SocksURL       string                    `json:"socks_url,omitempty"`
+	HTTPPort       int                       `json:"http_port,omitempty"`
+	SocksPort      int                       `json:"socks_port,omitempty"`
+	ControllerPort int                       `json:"controller_port,omitempty"`
+	Error          string                    `json:"error,omitempty"`
+	Test           *ProxyTestResult          `json:"test,omitempty"`
+	Benchmark      *ClashNodeBenchmarkResult `json:"benchmark,omitempty"`
 }
 
 type clashSubscription struct {
 	Proxies []map[string]any `yaml:"proxies"`
+}
+
+type ClashSubscriptionBenchmarkInput struct {
+	Enabled             bool
+	DurationSeconds     int
+	TopN                int
+	AllowedCountryCodes []string
+}
+
+type ClashSubscriptionBenchmark struct {
+	Enabled             bool                       `json:"enabled"`
+	DurationSeconds     int                        `json:"duration_seconds"`
+	TopN                int                        `json:"top_n"`
+	AllowedCountryCodes []string                   `json:"allowed_country_codes"`
+	Target              string                     `json:"target"`
+	StartedAt           int64                      `json:"started_at"`
+	FinishedAt          int64                      `json:"finished_at"`
+	Requested           int                        `json:"requested"`
+	Eligible            int                        `json:"eligible"`
+	Selected            int                        `json:"selected"`
+	Skipped             int                        `json:"skipped"`
+	Results             []ClashNodeBenchmarkResult `json:"results"`
+}
+
+type ClashNodeBenchmarkResult struct {
+	Name                string   `json:"name"`
+	Type                string   `json:"type"`
+	Rank                int      `json:"rank,omitempty"`
+	Selected            bool     `json:"selected"`
+	Eligible            bool     `json:"eligible"`
+	Reason              string   `json:"reason,omitempty"`
+	Score               float64  `json:"score"`
+	SuccessRate         float64  `json:"success_rate"`
+	Samples             int      `json:"samples"`
+	Successes           int      `json:"successes"`
+	AvgLatencyMs        int64    `json:"avg_latency_ms,omitempty"`
+	BestLatencyMs       int64    `json:"best_latency_ms,omitempty"`
+	WorstLatencyMs      int64    `json:"worst_latency_ms,omitempty"`
+	LastHTTPStatus      int      `json:"last_http_status,omitempty"`
+	ExitIP              string   `json:"exit_ip,omitempty"`
+	Country             string   `json:"country,omitempty"`
+	CountryCode         string   `json:"country_code,omitempty"`
+	AllowedCountryCodes []string `json:"allowed_country_codes,omitempty"`
+	Error               string   `json:"error,omitempty"`
 }
 
 // ImportClashSubscription imports Clash nodes as local SOCKS sidecars.
@@ -107,12 +164,28 @@ func (s *adminServiceImpl) ImportClashSubscription(ctx context.Context, input Cl
 		return nil, fmt.Errorf("too many clash nodes: %d exceeds limit %d", len(nodes), clashImportMaxNodes)
 	}
 
+	totalNodes := len(nodes)
+	var benchmarkItems []ClashSubscriptionImportItem
+	var benchmarkByKey map[string]*ClashNodeBenchmarkResult
+	var benchmark *ClashSubscriptionBenchmark
+	if input.Benchmark.Enabled {
+		var err error
+		nodes, benchmark, benchmarkItems, benchmarkByKey, err = s.benchmarkClashImportNodes(ctx, input.Benchmark, nodes)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	result := &ClashSubscriptionImportResult{
-		Total:           len(nodes),
+		Total:           totalNodes,
 		RestartRequired: len(nodes) > 0,
 		RestartCommand:  "systemctl --user restart service-codex-proxy-sidecars.service",
+		Benchmark:       benchmark,
+		Skipped:         len(benchmarkItems),
 	}
 	if len(nodes) == 0 {
+		result.Items = append(result.Items, benchmarkItems...)
+		sortClashImportItems(result.Items)
 		return result, nil
 	}
 
@@ -139,7 +212,8 @@ func (s *adminServiceImpl) ImportClashSubscription(ctx context.Context, input Cl
 			byPort[p.Port] = p
 		}
 	}
-	existingSidecars := readClashSidecarSpecs(clashSidecarRoot, usedPorts)
+	sidecarRoot := clashSidecarRoot()
+	existingSidecars := readClashSidecarSpecs(sidecarRoot, usedPorts)
 
 	usedKeys := make(map[string]bool)
 	for _, node := range nodes {
@@ -170,8 +244,18 @@ func (s *adminServiceImpl) ImportClashSubscription(ctx context.Context, input Cl
 		item.SocksPort = spec.SocksPort
 		item.ControllerPort = spec.ControllerPort
 		item.SocksURL = fmt.Sprintf("socks5h://127.0.0.1:%d", spec.SocksPort)
+		if benchmarkByKey != nil {
+			benchmarkKey := stringFromAny(node[clashImportBenchNodeKey])
+			if benchmarkKey != "" {
+				item.Benchmark = benchmarkByKey[benchmarkKey]
+			}
+			if item.Benchmark == nil {
+				item.Benchmark = benchmarkByKey[clashBenchmarkNodeKey(node)]
+			}
+			delete(node, clashImportBenchNodeKey)
+		}
 
-		if err := writeClashSidecarConfig(clashSidecarRoot, spec, node); err != nil {
+		if err := writeClashSidecarConfig(sidecarRoot, spec, node); err != nil {
 			item.Action = "failed"
 			item.Error = err.Error()
 			result.Items = append(result.Items, item)
@@ -219,6 +303,7 @@ func (s *adminServiceImpl) ImportClashSubscription(ctx context.Context, input Cl
 		result.Imported++
 		result.Items = append(result.Items, item)
 	}
+	result.Items = append(result.Items, benchmarkItems...)
 
 	if input.RestartSidecars && result.Imported > 0 {
 		if err := restartClashSidecars(ctx); err != nil {
@@ -780,6 +865,18 @@ func clashNodeName(node map[string]any) string {
 	return strings.TrimSpace(name)
 }
 
+func clashSidecarRoot() string {
+	if root := strings.TrimSpace(os.Getenv(clashSidecarRootEnv)); root != "" {
+		return root
+	}
+	// CUSTOM(service_codex2): imported proxy rows are useless unless the web
+	// import path and service-codex-proxy-sidecars.service write/read the same
+	// directory. Keep this local path explicit so DATA_DIR preview runs cannot
+	// silently generate sidecar configs under /tmp while the user service reads
+	// backend/data/proxy_sidecars.
+	return clashDefaultSidecarRoot
+}
+
 func readClashSidecarSpecs(root string, used map[int]bool) map[string]clashSidecarSpec {
 	out := make(map[string]clashSidecarSpec)
 	entries, err := os.ReadDir(root)
@@ -834,6 +931,8 @@ func writeClashSidecarConfig(root string, spec clashSidecarSpec, node map[string
 		return err
 	}
 	name := clashNodeName(node)
+	nodeConfig := copyClashNode(node)
+	delete(nodeConfig, clashImportBenchNodeKey)
 	cfg := map[string]any{
 		"port":                spec.HTTPPort,
 		"socks-port":          spec.SocksPort,
@@ -843,7 +942,7 @@ func writeClashSidecarConfig(root string, spec clashSidecarSpec, node map[string
 		"unified-delay":       true,
 		"external-controller": fmt.Sprintf("127.0.0.1:%d", spec.ControllerPort),
 		"dns":                 map[string]any{"enable": false},
-		"proxies":             []map[string]any{node},
+		"proxies":             []map[string]any{nodeConfig},
 		"proxy-groups": []map[string]any{
 			{
 				"name":    "AUTO",
@@ -893,8 +992,22 @@ func yamlNumberToInt(v any) int {
 
 func sortClashImportItems(items []ClashSubscriptionImportItem) {
 	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Benchmark != nil || items[j].Benchmark != nil {
+			leftRank := clashImportItemBenchmarkRank(items[i])
+			rightRank := clashImportItemBenchmarkRank(items[j])
+			if leftRank != rightRank {
+				return leftRank < rightRank
+			}
+		}
 		return items[i].SocksPort < items[j].SocksPort
 	})
+}
+
+func clashImportItemBenchmarkRank(item ClashSubscriptionImportItem) int {
+	if item.Benchmark == nil || item.Benchmark.Rank <= 0 {
+		return 1 << 30
+	}
+	return item.Benchmark.Rank
 }
 
 func restartClashSidecars(ctx context.Context) error {
@@ -930,5 +1043,593 @@ func (s *adminServiceImpl) testClashImportItems(ctx context.Context, result *Cla
 			continue
 		}
 		result.Items[i].Test = test
+	}
+}
+
+type clashBenchmarkCandidate struct {
+	Node      map[string]any
+	BenchNode map[string]any
+	Key       string
+	Name      string
+	BenchName string
+	Type      string
+}
+
+func (s *adminServiceImpl) benchmarkClashImportNodes(
+	ctx context.Context,
+	input ClashSubscriptionBenchmarkInput,
+	nodes []map[string]any,
+) ([]map[string]any, *ClashSubscriptionBenchmark, []ClashSubscriptionImportItem, map[string]*ClashNodeBenchmarkResult, error) {
+	benchInput := normalizeClashBenchmarkInput(input)
+	summary := &ClashSubscriptionBenchmark{
+		Enabled:             true,
+		DurationSeconds:     benchInput.DurationSeconds,
+		TopN:                benchInput.TopN,
+		AllowedCountryCodes: benchInput.AllowedCountryCodes,
+		Target:              clashImportBenchTarget,
+		Requested:           len(nodes),
+		StartedAt:           time.Now().Unix(),
+	}
+	if len(nodes) == 0 {
+		summary.FinishedAt = time.Now().Unix()
+		return nodes, summary, nil, nil, nil
+	}
+	clashBin, err := clashBenchmarkBinary()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	candidates := makeClashBenchmarkCandidates(nodes)
+	results := make(map[string]*ClashNodeBenchmarkResult, len(candidates))
+	for _, candidate := range candidates {
+		results[candidate.Key] = &ClashNodeBenchmarkResult{
+			Name:                candidate.Name,
+			Type:                candidate.Type,
+			AllowedCountryCodes: append([]string(nil), benchInput.AllowedCountryCodes...),
+		}
+	}
+
+	tmpDir, err := os.MkdirTemp("", "service-codex2-clash-bench-*")
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	httpPort, socksPort, controllerPort, err := clashBenchmarkPorts()
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := writeClashBenchmarkConfig(configPath, candidates, httpPort, socksPort, controllerPort); err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	benchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	logPath := filepath.Join(tmpDir, "clash.log")
+	logFile, err := os.Create(logPath)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	defer func() { _ = logFile.Close() }()
+
+	cmd := exec.CommandContext(benchCtx, clashBin, "-d", filepath.Join(tmpDir, "home"), "-f", configPath)
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	if err := cmd.Start(); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("start clash benchmark core failed: %w", err)
+	}
+	defer stopClashBenchmarkProcess(cmd)
+
+	controllerURL := fmt.Sprintf("http://127.0.0.1:%d", controllerPort)
+	if err := waitForClashBenchmarkController(benchCtx, controllerURL, 20*time.Second); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("benchmark clash core did not become ready: %w; log: %s", err, readClashBenchmarkLogTail(logPath))
+	}
+
+	proxyURL := fmt.Sprintf("http://127.0.0.1:%d", httpPort)
+	deadline := time.Now().Add(time.Duration(benchInput.DurationSeconds) * time.Second)
+	for time.Now().Before(deadline) {
+		if err := benchCtx.Err(); err != nil {
+			return nil, nil, nil, nil, err
+		}
+		for _, candidate := range candidates {
+			if !time.Now().Before(deadline) {
+				break
+			}
+			if err := selectClashBenchmarkProxy(benchCtx, controllerURL, candidate.BenchName); err != nil {
+				result := results[candidate.Key]
+				result.Error = err.Error()
+				continue
+			}
+			if err := sleepClashBenchmark(benchCtx, 250*time.Millisecond); err != nil {
+				break
+			}
+			result := results[candidate.Key]
+			status, latency, err := probeClashBenchmarkOpenAI(benchCtx, proxyURL)
+			result.Samples++
+			result.LastHTTPStatus = status
+			if err != nil {
+				result.Error = err.Error()
+				continue
+			}
+			result.Successes++
+			recordClashBenchmarkLatency(result, latency)
+			result.Error = ""
+			if result.CountryCode == "" {
+				s.fillClashBenchmarkExitInfo(benchCtx, result, proxyURL, candidate.Name)
+			}
+		}
+	}
+
+	finalizeClashBenchmarkResults(results, benchInput.AllowedCountryCodes)
+	selectedKeys := selectClashBenchmarkWinners(results, benchInput.TopN)
+	selectedSet := make(map[string]bool, len(selectedKeys))
+	for rank, key := range selectedKeys {
+		selectedSet[key] = true
+		result := results[key]
+		result.Selected = true
+		result.Rank = rank + 1
+	}
+
+	selectedNodes := make([]map[string]any, 0, len(selectedKeys))
+	candidateByKey := make(map[string]clashBenchmarkCandidate, len(candidates))
+	for _, candidate := range candidates {
+		candidateByKey[candidate.Key] = candidate
+	}
+	for _, key := range selectedKeys {
+		node := candidateByKey[key].Node
+		node[clashImportBenchNodeKey] = key
+		selectedNodes = append(selectedNodes, node)
+	}
+
+	skippedItems := make([]ClashSubscriptionImportItem, 0, len(candidates)-len(selectedNodes))
+	byNodeKey := make(map[string]*ClashNodeBenchmarkResult, len(candidates)*2)
+	summary.Results = make([]ClashNodeBenchmarkResult, 0, len(candidates))
+	for _, candidate := range candidates {
+		result := results[candidate.Key]
+		byNodeKey[candidate.Key] = result
+		byNodeKey[clashBenchmarkNodeKey(candidate.Node)] = result
+		summary.Results = append(summary.Results, *result)
+		if selectedSet[candidate.Key] {
+			continue
+		}
+		reason := result.Reason
+		if reason == "" {
+			reason = "未进入 Top N"
+		}
+		skippedItems = append(skippedItems, ClashSubscriptionImportItem{
+			Name:      candidate.Name,
+			Key:       fmt.Sprintf("benchmark_%d", len(skippedItems)+1),
+			Type:      candidate.Type,
+			Action:    "skipped",
+			Error:     reason,
+			Benchmark: result,
+		})
+	}
+	sort.SliceStable(summary.Results, func(i, j int) bool {
+		left := summary.Results[i]
+		right := summary.Results[j]
+		if left.Selected != right.Selected {
+			return left.Selected
+		}
+		if left.Rank != right.Rank {
+			if left.Rank == 0 {
+				return false
+			}
+			if right.Rank == 0 {
+				return true
+			}
+			return left.Rank < right.Rank
+		}
+		if left.SuccessRate != right.SuccessRate {
+			return left.SuccessRate > right.SuccessRate
+		}
+		return left.AvgLatencyMs < right.AvgLatencyMs
+	})
+
+	summary.FinishedAt = time.Now().Unix()
+	for _, result := range results {
+		if result.Eligible {
+			summary.Eligible++
+		}
+		if result.Selected {
+			summary.Selected++
+		}
+	}
+	summary.Skipped = len(candidates) - summary.Selected
+	return selectedNodes, summary, skippedItems, byNodeKey, nil
+}
+
+func recordClashBenchmarkLatency(result *ClashNodeBenchmarkResult, latency int64) {
+	if result == nil || latency <= 0 || result.Successes <= 0 {
+		return
+	}
+	if result.BestLatencyMs == 0 || latency < result.BestLatencyMs {
+		result.BestLatencyMs = latency
+	}
+	if latency > result.WorstLatencyMs {
+		result.WorstLatencyMs = latency
+	}
+	previousSuccesses := int64(result.Successes - 1)
+	result.AvgLatencyMs = ((result.AvgLatencyMs * previousSuccesses) + latency) / int64(result.Successes)
+}
+
+func normalizeClashBenchmarkInput(input ClashSubscriptionBenchmarkInput) ClashSubscriptionBenchmarkInput {
+	if input.DurationSeconds < clashImportBenchMinSeconds {
+		input.DurationSeconds = clashImportBenchMinSeconds
+	}
+	if input.DurationSeconds > clashImportBenchMaxSeconds {
+		input.DurationSeconds = clashImportBenchMaxSeconds
+	}
+	if input.TopN <= 0 {
+		input.TopN = clashImportBenchDefaultTop
+	}
+	if input.TopN > clashImportBenchMaxTop {
+		input.TopN = clashImportBenchMaxTop
+	}
+	if len(input.AllowedCountryCodes) == 0 {
+		input.AllowedCountryCodes = []string{"US", "SG", "JP"}
+	}
+	seen := make(map[string]bool, len(input.AllowedCountryCodes))
+	codes := make([]string, 0, len(input.AllowedCountryCodes))
+	for _, code := range input.AllowedCountryCodes {
+		code = strings.ToUpper(strings.TrimSpace(code))
+		if code == "" || seen[code] {
+			continue
+		}
+		seen[code] = true
+		codes = append(codes, code)
+	}
+	if len(codes) == 0 {
+		codes = []string{"US", "SG", "JP"}
+	}
+	input.AllowedCountryCodes = codes
+	return input
+}
+
+func makeClashBenchmarkCandidates(nodes []map[string]any) []clashBenchmarkCandidate {
+	nameCounts := map[string]int{}
+	candidates := make([]clashBenchmarkCandidate, 0, len(nodes))
+	for i, node := range nodes {
+		name := clashNodeName(node)
+		nameCounts[name]++
+		benchName := name
+		if nameCounts[name] > 1 {
+			benchName = fmt.Sprintf("%s #%d", name, nameCounts[name])
+		}
+		benchNode := copyClashNode(node)
+		benchNode["name"] = benchName
+		nodeType, _ := node["type"].(string)
+		key := clashBenchmarkNodeKeyWithIndex(node, i)
+		candidates = append(candidates, clashBenchmarkCandidate{
+			Node:      node,
+			BenchNode: benchNode,
+			Key:       key,
+			Name:      name,
+			BenchName: benchName,
+			Type:      strings.TrimSpace(nodeType),
+		})
+	}
+	return candidates
+}
+
+func copyClashNode(node map[string]any) map[string]any {
+	out := make(map[string]any, len(node))
+	for key, value := range node {
+		out[key] = value
+	}
+	return out
+}
+
+func clashBenchmarkNodeKey(node map[string]any) string {
+	return strings.Join([]string{
+		clashNodeName(node),
+		stringFromAny(node["type"]),
+		stringFromAny(node["server"]),
+		stringFromAny(node["port"]),
+	}, "\x00")
+}
+
+func clashBenchmarkNodeKeyWithIndex(node map[string]any, index int) string {
+	return fmt.Sprintf("%s\x00%d", clashBenchmarkNodeKey(node), index)
+}
+
+func clashBenchmarkBinary() (string, error) {
+	for _, path := range []string{clashImportBenchMihomoBin, clashImportBenchClashBin} {
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("clash benchmark core not found: tried %s and %s", clashImportBenchMihomoBin, clashImportBenchClashBin)
+}
+
+func readClashBenchmarkLogTail(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "unavailable"
+	}
+	text := strings.TrimSpace(string(data))
+	if text == "" {
+		return "empty"
+	}
+	const maxLen = 1600
+	if len(text) > maxLen {
+		text = text[len(text)-maxLen:]
+	}
+	return text
+}
+
+func clashBenchmarkPorts() (int, int, int, error) {
+	used := map[int]bool{}
+	httpPort, err := freeLocalTCPPort(used)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	socksPort, err := freeLocalTCPPort(used)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	controllerPort, err := freeLocalTCPPort(used)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	return httpPort, socksPort, controllerPort, nil
+}
+
+func freeLocalTCPPort(used map[int]bool) (int, error) {
+	for i := 0; i < 20; i++ {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return 0, err
+		}
+		port := listener.Addr().(*net.TCPAddr).Port
+		_ = listener.Close()
+		if !used[port] {
+			used[port] = true
+			return port, nil
+		}
+	}
+	return 0, errors.New("failed to allocate local benchmark ports")
+}
+
+func writeClashBenchmarkConfig(path string, candidates []clashBenchmarkCandidate, httpPort, socksPort, controllerPort int) error {
+	names := make([]string, 0, len(candidates))
+	proxies := make([]map[string]any, 0, len(candidates))
+	for _, candidate := range candidates {
+		names = append(names, candidate.BenchName)
+		proxies = append(proxies, candidate.BenchNode)
+	}
+	cfg := map[string]any{
+		"port":                httpPort,
+		"socks-port":          socksPort,
+		"allow-lan":           false,
+		"mode":                "Rule",
+		"log-level":           "silent",
+		"unified-delay":       true,
+		"external-controller": fmt.Sprintf("127.0.0.1:%d", controllerPort),
+		"dns":                 map[string]any{"enable": false},
+		"proxies":             proxies,
+		"proxy-groups": []map[string]any{
+			{
+				"name":    "BENCH",
+				"type":    "select",
+				"proxies": names,
+			},
+		},
+		"rules": []string{"MATCH,BENCH"},
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+func waitForClashBenchmarkController(ctx context.Context, baseURL string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/version", nil)
+		if err != nil {
+			return err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return nil
+			}
+			lastErr = fmt.Errorf("controller returned http %d", resp.StatusCode)
+		} else {
+			lastErr = err
+		}
+		if err := sleepClashBenchmark(ctx, 300*time.Millisecond); err != nil {
+			return err
+		}
+	}
+	if lastErr == nil {
+		lastErr = errors.New("controller did not become ready")
+	}
+	return lastErr
+}
+
+func selectClashBenchmarkProxy(ctx context.Context, baseURL, proxyName string) error {
+	body, _ := json.Marshal(map[string]string{"name": proxyName})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, baseURL+"/proxies/BENCH", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("select proxy failed: http %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func probeClashBenchmarkOpenAI(ctx context.Context, proxyURL string) (int, int64, error) {
+	proxyParsed, err := url.Parse(proxyURL)
+	if err != nil {
+		return 0, 0, err
+	}
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(proxyParsed),
+		DialContext: (&net.Dialer{
+			Timeout: 4 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: 6 * time.Second,
+		DisableKeepAlives:     true,
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   8 * time.Second,
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, clashImportBenchTarget, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", proxyQualityClientUserAgent)
+
+	start := time.Now()
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, time.Since(start).Milliseconds(), err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	latency := time.Since(start).Milliseconds()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, proxyQualityMaxBodyBytes))
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusOK {
+		return resp.StatusCode, latency, nil
+	}
+	if resp.StatusCode == http.StatusForbidden && strings.Contains(strings.ToLower(string(body)), "unsupported") {
+		return resp.StatusCode, latency, fmt.Errorf("OpenAI region blocked: http %d", resp.StatusCode)
+	}
+	return resp.StatusCode, latency, fmt.Errorf("OpenAI returned http %d", resp.StatusCode)
+}
+
+func (s *adminServiceImpl) fillClashBenchmarkExitInfo(ctx context.Context, result *ClashNodeBenchmarkResult, proxyURL, nodeName string) {
+	if result == nil {
+		return
+	}
+	if s != nil && s.proxyProber != nil {
+		probeCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+		defer cancel()
+		if exitInfo, _, err := s.proxyProber.ProbeProxy(probeCtx, proxyURL); err == nil && exitInfo != nil {
+			result.ExitIP = exitInfo.IP
+			result.Country = exitInfo.Country
+			result.CountryCode = strings.ToUpper(strings.TrimSpace(exitInfo.CountryCode))
+		}
+	}
+	if result.CountryCode == "" {
+		result.CountryCode, result.Country = clashCountryFromName(nodeName)
+	}
+}
+
+func clashCountryFromName(name string) (string, string) {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.Contains(lower, "singapore"), strings.Contains(lower, " sg"), strings.Contains(lower, "sg-"), strings.Contains(name, "新加坡"), strings.Contains(name, "狮城"):
+		return "SG", "Singapore"
+	case strings.Contains(lower, "japan"), strings.Contains(lower, " jp"), strings.Contains(lower, "jp-"), strings.Contains(lower, "tokyo"), strings.Contains(lower, "osaka"), strings.Contains(name, "日本"), strings.Contains(name, "东京"), strings.Contains(name, "大阪"):
+		return "JP", "Japan"
+	case strings.Contains(lower, "united states"), strings.Contains(lower, "usa"), strings.Contains(lower, " us"), strings.Contains(lower, "us-"), strings.Contains(name, "美国"), strings.Contains(name, "美國"):
+		return "US", "United States"
+	default:
+		return "", ""
+	}
+}
+
+func finalizeClashBenchmarkResults(results map[string]*ClashNodeBenchmarkResult, allowed []string) {
+	allowedSet := make(map[string]bool, len(allowed))
+	for _, code := range allowed {
+		allowedSet[strings.ToUpper(strings.TrimSpace(code))] = true
+	}
+	for _, result := range results {
+		if result.Samples > 0 {
+			result.SuccessRate = float64(result.Successes) / float64(result.Samples)
+		}
+		if result.Successes == 0 {
+			result.Reason = "OpenAI 不可达"
+			continue
+		}
+		if result.CountryCode == "" {
+			result.Reason = "无法确认出口地区"
+			continue
+		}
+		if !allowedSet[strings.ToUpper(result.CountryCode)] {
+			result.Reason = fmt.Sprintf("出口地区 %s 不在允许列表", result.CountryCode)
+			continue
+		}
+		result.Eligible = true
+		latencyPenalty := float64(result.AvgLatencyMs) / 1000
+		result.Score = result.SuccessRate*100 - latencyPenalty
+		if result.Score < 0 {
+			result.Score = 0
+		}
+	}
+}
+
+func selectClashBenchmarkWinners(results map[string]*ClashNodeBenchmarkResult, topN int) []string {
+	keys := make([]string, 0, len(results))
+	for key, result := range results {
+		if result.Eligible {
+			keys = append(keys, key)
+		}
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		left := results[keys[i]]
+		right := results[keys[j]]
+		if left.SuccessRate != right.SuccessRate {
+			return left.SuccessRate > right.SuccessRate
+		}
+		if left.AvgLatencyMs != right.AvgLatencyMs {
+			return left.AvgLatencyMs < right.AvgLatencyMs
+		}
+		if left.BestLatencyMs != right.BestLatencyMs {
+			return left.BestLatencyMs < right.BestLatencyMs
+		}
+		return left.Name < right.Name
+	})
+	if len(keys) > topN {
+		keys = keys[:topN]
+	}
+	return keys
+}
+
+func stopClashBenchmarkProcess(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		return
+	}
+	_ = cmd.Process.Signal(os.Interrupt)
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		_ = cmd.Process.Kill()
+		<-done
+	}
+}
+
+func sleepClashBenchmark(ctx context.Context, duration time.Duration) error {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }

@@ -22,7 +22,19 @@ ROOT = Path(__file__).resolve().parents[1]
 VPN_MD = ROOT / "vpn.md"
 BACKEND_CONFIG = ROOT / "backend" / "config.yaml"
 SIDECAR_ROOT = ROOT / "backend" / "data" / "proxy_sidecars"
-CLASH_BIN = Path("/home/ike/Downloads/clash/clash-linux-amd64-v1.18.0")
+
+
+def default_clash_bin() -> Path:
+    for path in (
+        Path("/usr/bin/verge-mihomo"),
+        Path("/home/ike/Downloads/clash/clash-linux-amd64-v1.18.0"),
+    ):
+        if path.exists():
+            return path
+    return Path("/usr/bin/verge-mihomo")
+
+
+CLASH_BIN = default_clash_bin()
 
 
 @dataclass(frozen=True)

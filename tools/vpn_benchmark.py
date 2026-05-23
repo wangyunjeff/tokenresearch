@@ -30,6 +30,16 @@ TARGETS = {
 }
 
 
+def default_clash_bin() -> Path:
+    for path in (
+        Path("/usr/bin/verge-mihomo"),
+        Path("/home/ike/Downloads/clash/clash-linux-amd64-v1.18.0"),
+    ):
+        if path.exists():
+            return path
+    return Path("/usr/bin/verge-mihomo")
+
+
 @dataclass
 class ProxyMeta:
     name: str
@@ -465,7 +475,7 @@ def main() -> int:
     parser.add_argument("--max-time", type=int, default=10)
     parser.add_argument("--report", type=Path, default=Path("vpn_benchmark_report.md"))
     parser.add_argument("--raw-json", type=Path, default=Path("vpn_benchmark_raw.json"))
-    parser.add_argument("--clash-bin", type=Path, default=Path("/home/ike/Downloads/clash/clash-linux-amd64-v1.18.0"))
+    parser.add_argument("--clash-bin", type=Path, default=default_clash_bin())
     parser.add_argument("--clash-home", type=Path, default=Path("/tmp/codex-clash-bench"))
     args = parser.parse_args()
 

@@ -278,6 +278,12 @@ func TestProxyHandlerEndpoints(t *testing.T) {
 		"limit":            10,
 		"restart_sidecars": true,
 		"test":             true,
+		"benchmark": map[string]any{
+			"enabled":               true,
+			"duration_seconds":      180,
+			"top_n":                 10,
+			"allowed_country_codes": []string{"us", "SG", "JP"},
+		},
 	})
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/proxies/clash-subscription/import", bytes.NewReader(body))
@@ -288,6 +294,10 @@ func TestProxyHandlerEndpoints(t *testing.T) {
 	require.Equal(t, 17920, adminSvc.lastClashImport.StartSocksPort)
 	require.True(t, adminSvc.lastClashImport.RestartSidecars)
 	require.True(t, adminSvc.lastClashImport.Test)
+	require.True(t, adminSvc.lastClashImport.Benchmark.Enabled)
+	require.Equal(t, 180, adminSvc.lastClashImport.Benchmark.DurationSeconds)
+	require.Equal(t, 10, adminSvc.lastClashImport.Benchmark.TopN)
+	require.Equal(t, []string{"US", "SG", "JP"}, adminSvc.lastClashImport.Benchmark.AllowedCountryCodes)
 }
 
 func TestRedeemHandlerEndpoints(t *testing.T) {

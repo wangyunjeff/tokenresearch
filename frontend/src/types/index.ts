@@ -1063,6 +1063,12 @@ export interface ClashSubscriptionImportRequest {
   limit?: number
   restart_sidecars?: boolean
   test?: boolean
+  benchmark?: {
+    enabled?: boolean
+    duration_seconds?: number
+    top_n?: number
+    allowed_country_codes?: string[]
+  }
 }
 
 export interface ClashSubscriptionImportItem {
@@ -1084,6 +1090,44 @@ export interface ClashSubscriptionImportItem {
     country?: string
     country_code?: string
   }
+  benchmark?: ClashNodeBenchmarkResult
+}
+
+export interface ClashNodeBenchmarkResult {
+  name: string
+  type: string
+  rank?: number
+  selected: boolean
+  eligible: boolean
+  reason?: string
+  score: number
+  success_rate: number
+  samples: number
+  successes: number
+  avg_latency_ms?: number
+  best_latency_ms?: number
+  worst_latency_ms?: number
+  last_http_status?: number
+  exit_ip?: string
+  country?: string
+  country_code?: string
+  allowed_country_codes?: string[]
+  error?: string
+}
+
+export interface ClashSubscriptionBenchmark {
+  enabled: boolean
+  duration_seconds: number
+  top_n: number
+  allowed_country_codes: string[]
+  target: string
+  started_at: number
+  finished_at: number
+  requested: number
+  eligible: number
+  selected: number
+  skipped: number
+  results: ClashNodeBenchmarkResult[]
 }
 
 export interface ClashSubscriptionImportResult {
@@ -1097,6 +1141,7 @@ export interface ClashSubscriptionImportResult {
   restarted: boolean
   restart_error?: string
   restart_command: string
+  benchmark?: ClashSubscriptionBenchmark
   items: ClashSubscriptionImportItem[]
 }
 

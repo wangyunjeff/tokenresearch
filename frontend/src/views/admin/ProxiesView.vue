@@ -756,6 +756,8 @@
       :show="showClashImportModal"
       :title="t('admin.proxies.clashImportTitle')"
       width="wide"
+      :closable="!clashImporting"
+      :close-on-escape="!clashImporting"
       @close="closeClashImportModal"
     >
       <div class="space-y-5">
@@ -814,10 +816,65 @@
           </div>
         </div>
 
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <label class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-100">
+              <input v-model="clashImportForm.benchmark.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600" />
+              {{ t('admin.proxies.clashBenchmarkEnabled') }}
+            </label>
+            <div class="text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.proxies.clashBenchmarkHint') }}
+            </div>
+          </div>
+          <div class="mt-4 grid gap-4 md:grid-cols-3" :class="!clashImportForm.benchmark.enabled ? 'opacity-60' : ''">
+            <div>
+              <label class="input-label">{{ t('admin.proxies.clashBenchmarkDuration') }}</label>
+              <Select
+                v-model="clashImportForm.benchmark.duration_seconds"
+                :options="clashBenchmarkDurationOptions"
+                :disabled="!clashImportForm.benchmark.enabled"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.proxies.clashBenchmarkTopN') }}</label>
+              <input
+                v-model.number="clashImportForm.benchmark.top_n"
+                type="number"
+                min="1"
+                max="50"
+                class="input"
+                :disabled="!clashImportForm.benchmark.enabled"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.proxies.clashBenchmarkRegions') }}</label>
+              <div class="flex h-10 items-center gap-3">
+                <label
+                  v-for="region in clashBenchmarkRegionOptions"
+                  :key="region.value"
+                  class="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300"
+                >
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 rounded border-gray-300 text-primary-600"
+                    :checked="clashImportForm.benchmark.allowed_country_codes.includes(region.value)"
+                    :disabled="!clashImportForm.benchmark.enabled"
+                    @change="toggleClashBenchmarkRegion(region.value, $event)"
+                  />
+                  {{ region.label }}
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div v-if="clashImportResult" class="rounded-lg border border-gray-200 dark:border-dark-600">
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-3 text-sm dark:border-dark-600 dark:bg-dark-800">
             <div class="font-medium text-gray-900 dark:text-white">
               {{ t('admin.proxies.clashImportSummary', clashImportSummaryParams(clashImportResult)) }}
+            </div>
+            <div v-if="clashImportResult.benchmark" class="text-primary-700 dark:text-primary-300">
+              {{ t('admin.proxies.clashBenchmarkSummary', clashBenchmarkSummaryParams(clashImportResult)) }}
             </div>
             <div v-if="clashImportResult.restart_error" class="text-red-600 dark:text-red-400">
               {{ clashImportResult.restart_error }}
@@ -836,6 +893,9 @@
                   <th class="px-3 py-2 text-left">{{ t('admin.proxies.name') }}</th>
                   <th class="px-3 py-2 text-left">{{ t('admin.proxies.protocol') }}</th>
                   <th class="px-3 py-2 text-left">{{ t('admin.proxies.status') }}</th>
+                  <th class="px-3 py-2 text-left">{{ t('admin.proxies.clashBenchmarkRank') }}</th>
+                  <th class="px-3 py-2 text-left">OpenAI</th>
+                  <th class="px-3 py-2 text-left">{{ t('admin.proxies.qualityCountry') }}</th>
                   <th class="px-3 py-2 text-left">SOCKS</th>
                   <th class="px-3 py-2 text-left">{{ t('admin.proxies.qualityTableMessage') }}</th>
                 </tr>
@@ -846,6 +906,19 @@
                   <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ item.type || '-' }}</td>
                   <td class="px-3 py-2">
                     <span class="badge" :class="clashActionClass(item.action)">{{ clashActionLabel(item.action) }}</span>
+                  </td>
+                  <td class="px-3 py-2 text-gray-600 dark:text-gray-300">
+                    {{ item.benchmark?.rank ? `#${item.benchmark.rank}` : '-' }}
+                  </td>
+                  <td class="px-3 py-2 text-gray-600 dark:text-gray-300">
+                    <span v-if="item.benchmark">
+                      {{ formatPercent(item.benchmark.success_rate) }}
+                      <span v-if="item.benchmark.avg_latency_ms"> · {{ item.benchmark.avg_latency_ms }}ms</span>
+                    </span>
+                    <span v-else>-</span>
+                  </td>
+                  <td class="px-3 py-2 text-gray-600 dark:text-gray-300">
+                    {{ item.benchmark?.country_code || item.test?.country_code || '-' }}
                   </td>
                   <td class="px-3 py-2 font-mono text-xs text-gray-600 dark:text-gray-300">{{ item.socks_url || '-' }}</td>
                   <td class="px-3 py-2 text-gray-600 dark:text-gray-300">
@@ -866,7 +939,101 @@
           </button>
           <button @click="handleClashImport" type="button" :disabled="clashImporting" class="btn btn-primary">
             <Icon v-if="clashImporting" name="refresh" size="sm" class="mr-2 animate-spin" />
-            {{ clashImporting ? t('admin.proxies.clashImporting') : t('admin.proxies.clashImportButton') }}
+            {{
+              clashImporting
+                ? t(clashImportForm.benchmark.enabled ? 'admin.proxies.clashBenchmarkRunning' : 'admin.proxies.clashImporting')
+                : t('admin.proxies.clashImportButton')
+            }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <BaseDialog
+      :show="clashProgress.show"
+      :title="t('admin.proxies.clashProgressTitle')"
+      width="normal"
+      :closable="!clashImporting"
+      :close-on-escape="!clashImporting"
+      :close-on-click-outside="!clashImporting"
+      :z-index="70"
+      @close="clashProgress.show = false"
+    >
+      <div class="space-y-5">
+        <div class="flex items-start gap-3">
+          <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300">
+            <Icon name="refresh" size="md" :class="clashImporting ? 'animate-spin' : ''" />
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-medium text-gray-900 dark:text-white">
+              {{ clashProgressStageLabel }}
+            </div>
+            <div class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ clashProgress.detail }}
+            </div>
+          </div>
+          <div class="text-sm font-semibold text-gray-900 dark:text-white">
+            {{ clashProgress.percent }}%
+          </div>
+        </div>
+
+        <div>
+          <div class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
+            <div
+              class="h-full rounded-full bg-primary-500 transition-all duration-500"
+              :style="{ width: `${clashProgress.percent}%` }"
+            ></div>
+          </div>
+          <div class="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+            <span>{{ t('admin.proxies.clashProgressElapsed', { elapsed: clashProgress.elapsed_seconds }) }}</span>
+            <span>{{ t('admin.proxies.clashProgressEstimate', { total: clashProgress.estimated_seconds }) }}</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 text-sm">
+          <div class="rounded-md bg-gray-50 p-3 dark:bg-dark-700">
+            <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.proxies.clashBenchmarkDuration') }}</div>
+            <div class="mt-1 font-medium text-gray-900 dark:text-white">
+              {{ clashProgress.benchmark_seconds }}s
+            </div>
+          </div>
+          <div class="rounded-md bg-gray-50 p-3 dark:bg-dark-700">
+            <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.proxies.clashBenchmarkTopN') }}</div>
+            <div class="mt-1 font-medium text-gray-900 dark:text-white">
+              {{ clashProgress.top_n }}
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <div
+            v-for="stage in clashProgressStages"
+            :key="stage.key"
+            class="flex items-center gap-2 text-sm"
+            :class="clashProgressStageClass(stage)"
+          >
+            <Icon
+              :name="clashProgressStageIcon(stage)"
+              size="sm"
+              :class="clashProgress.stage === stage.key && clashImporting ? 'animate-spin' : ''"
+            />
+            <span>{{ stage.label }}</span>
+          </div>
+        </div>
+
+        <div v-if="clashProgress.error" class="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300">
+          {{ clashProgress.error }}
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="clashImporting"
+            @click="clashProgress.show = false"
+          >
+            {{ t('common.close') }}
           </button>
         </div>
       </template>
@@ -1132,6 +1299,19 @@ const qualityReportProxy = ref<Proxy | null>(null)
 const qualityReport = ref<ProxyQualityCheckResult | null>(null)
 const clashImporting = ref(false)
 const clashImportResult = ref<ClashSubscriptionImportResult | null>(null)
+type ClashProgressStage = 'prepare' | 'benchmark' | 'select' | 'import' | 'restart' | 'done' | 'error'
+const clashProgress = reactive({
+  show: false,
+  stage: 'prepare' as ClashProgressStage,
+  percent: 0,
+  elapsed_seconds: 0,
+  estimated_seconds: 60,
+  benchmark_seconds: 60,
+  top_n: 10,
+  detail: '',
+  error: ''
+})
+let clashProgressTimer: ReturnType<typeof setInterval> | null = null
 const clashImportForm = reactive({
   url: '',
   config: '',
@@ -1139,7 +1319,41 @@ const clashImportForm = reactive({
   start_socks_port: 17920,
   limit: 50,
   restart_sidecars: true,
-  test: false
+  test: false,
+  benchmark: {
+    enabled: true,
+    duration_seconds: 60,
+    top_n: 10,
+    allowed_country_codes: ['US', 'SG', 'JP']
+  }
+})
+
+const clashBenchmarkDurationOptions = computed(() => [
+  { value: 60, label: t('admin.proxies.clashBenchmarkDuration1m') },
+  { value: 180, label: t('admin.proxies.clashBenchmarkDuration3m') },
+  { value: 300, label: t('admin.proxies.clashBenchmarkDuration5m') }
+])
+
+const clashBenchmarkRegionOptions = [
+  { value: 'US', label: 'US' },
+  { value: 'SG', label: 'SG' },
+  { value: 'JP', label: 'JP' }
+]
+
+const clashProgressStages = computed(() => [
+  { key: 'prepare' as ClashProgressStage, label: t('admin.proxies.clashProgressStagePrepare'), start: 0 },
+  { key: 'benchmark' as ClashProgressStage, label: t('admin.proxies.clashProgressStageBenchmark'), start: 10 },
+  { key: 'select' as ClashProgressStage, label: t('admin.proxies.clashProgressStageSelect'), start: 82 },
+  { key: 'import' as ClashProgressStage, label: t('admin.proxies.clashProgressStageImport'), start: 88 },
+  { key: 'restart' as ClashProgressStage, label: t('admin.proxies.clashProgressStageRestart'), start: 94 },
+  { key: 'done' as ClashProgressStage, label: t('admin.proxies.clashProgressStageDone'), start: 100 }
+])
+
+const clashProgressStageLabel = computed(() => {
+  const stage = clashProgressStages.value.find((item) => item.key === clashProgress.stage)
+  if (stage) return stage.label
+  if (clashProgress.stage === 'error') return t('admin.proxies.clashProgressStageError')
+  return t('admin.proxies.clashProgressStagePrepare')
 })
 
 // Batch import state
@@ -1184,6 +1398,14 @@ const isAbortError = (error: unknown) => {
   if (!error || typeof error !== 'object') return false
   const maybeError = error as { name?: string; code?: string }
   return maybeError.name === 'AbortError' || maybeError.code === 'ERR_CANCELED'
+}
+
+const apiErrorMessage = (error: any, fallback: string) => {
+  return error?.response?.data?.detail ||
+    error?.response?.data?.error ||
+    error?.response?.data?.message ||
+    error?.message ||
+    fallback
 }
 
 const toggleSelectRow = (id: number, event: Event) => {
@@ -1300,6 +1522,106 @@ const closeClashImportModal = () => {
   showClashImportModal.value = false
   clashImporting.value = false
   clashImportResult.value = null
+  stopClashProgressTimer()
+}
+
+const estimateClashImportSeconds = () => {
+  const benchmarkSeconds = clashImportForm.benchmark.enabled
+    ? Number(clashImportForm.benchmark.duration_seconds) || 60
+    : 8
+  const importOverhead = 12 + (clashImportForm.restart_sidecars ? 8 : 0) + (clashImportForm.test ? 12 : 0)
+  return Math.max(15, benchmarkSeconds + importOverhead)
+}
+
+const updateClashProgressFromElapsed = () => {
+  if (!clashProgress.show || clashProgress.stage === 'done' || clashProgress.stage === 'error') {
+    return
+  }
+  clashProgress.elapsed_seconds += 1
+  const elapsed = clashProgress.elapsed_seconds
+  const estimated = Math.max(1, clashProgress.estimated_seconds)
+  const benchmarkSeconds = Math.max(1, clashProgress.benchmark_seconds)
+
+  if (elapsed <= 3) {
+    clashProgress.stage = 'prepare'
+    clashProgress.percent = Math.min(8, elapsed * 2)
+    clashProgress.detail = t('admin.proxies.clashProgressPrepareDetail')
+    return
+  }
+
+  if (clashImportForm.benchmark.enabled && elapsed <= benchmarkSeconds + 3) {
+    const benchmarkElapsed = Math.max(0, elapsed - 3)
+    const benchmarkPercent = Math.min(1, benchmarkElapsed / benchmarkSeconds)
+    clashProgress.stage = 'benchmark'
+    clashProgress.percent = Math.min(82, 10 + Math.round(benchmarkPercent * 72))
+    clashProgress.detail = t('admin.proxies.clashProgressBenchmarkDetail', {
+      elapsed: Math.min(benchmarkElapsed, benchmarkSeconds),
+      total: benchmarkSeconds
+    })
+    return
+  }
+
+  const tailElapsed = Math.max(0, elapsed - (clashImportForm.benchmark.enabled ? benchmarkSeconds + 3 : 3))
+  const tailTotal = Math.max(1, estimated - (clashImportForm.benchmark.enabled ? benchmarkSeconds + 3 : 3))
+  const tailRatio = Math.min(1, tailElapsed / tailTotal)
+  if (tailRatio < 0.35) {
+    clashProgress.stage = 'select'
+    clashProgress.percent = Math.max(clashProgress.percent, 84)
+    clashProgress.detail = t('admin.proxies.clashProgressSelectDetail')
+    return
+  }
+  if (tailRatio < 0.75) {
+    clashProgress.stage = 'import'
+    clashProgress.percent = Math.max(clashProgress.percent, 90)
+    clashProgress.detail = t('admin.proxies.clashProgressImportDetail')
+    return
+  }
+  clashProgress.stage = 'restart'
+  clashProgress.percent = Math.min(98, Math.max(clashProgress.percent, Math.round(94 + tailRatio * 4)))
+  clashProgress.detail = clashImportForm.restart_sidecars
+    ? t('admin.proxies.clashProgressRestartDetail')
+    : t('admin.proxies.clashProgressFinishDetail')
+}
+
+const startClashProgress = () => {
+  stopClashProgressTimer()
+  const benchmarkSeconds = clashImportForm.benchmark.enabled
+    ? Number(clashImportForm.benchmark.duration_seconds) || 60
+    : 0
+  clashProgress.show = true
+  clashProgress.stage = 'prepare'
+  clashProgress.percent = 0
+  clashProgress.elapsed_seconds = 0
+  clashProgress.estimated_seconds = estimateClashImportSeconds()
+  clashProgress.benchmark_seconds = benchmarkSeconds
+  clashProgress.top_n = clashImportForm.benchmark.enabled ? clashImportForm.benchmark.top_n : clashImportForm.limit
+  clashProgress.detail = t('admin.proxies.clashProgressPrepareDetail')
+  clashProgress.error = ''
+  clashProgressTimer = setInterval(updateClashProgressFromElapsed, 1000)
+}
+
+const finishClashProgress = (result: ClashSubscriptionImportResult) => {
+  stopClashProgressTimer()
+  clashProgress.stage = 'done'
+  clashProgress.percent = 100
+  clashProgress.detail = result.benchmark
+    ? t('admin.proxies.clashProgressDoneBenchmarkDetail', clashBenchmarkSummaryParams(result))
+    : t('admin.proxies.clashProgressDoneDetail', clashImportSummaryParams(result))
+}
+
+const failClashProgress = (message: string) => {
+  stopClashProgressTimer()
+  clashProgress.stage = 'error'
+  clashProgress.percent = Math.max(clashProgress.percent, 1)
+  clashProgress.detail = t('admin.proxies.clashProgressFailedDetail')
+  clashProgress.error = message
+}
+
+const stopClashProgressTimer = () => {
+  if (clashProgressTimer) {
+    clearInterval(clashProgressTimer)
+    clashProgressTimer = null
+  }
 }
 
 const handleClashImport = async () => {
@@ -1313,8 +1635,19 @@ const handleClashImport = async () => {
     appStore.showError(t('admin.proxies.portInvalid'))
     return
   }
+  if (clashImportForm.benchmark.enabled) {
+    if (clashImportForm.benchmark.top_n < 1 || clashImportForm.benchmark.top_n > 50) {
+      appStore.showError(t('admin.proxies.clashBenchmarkTopNInvalid'))
+      return
+    }
+    if (clashImportForm.benchmark.allowed_country_codes.length === 0) {
+      appStore.showError(t('admin.proxies.clashBenchmarkRegionsRequired'))
+      return
+    }
+  }
 
   clashImporting.value = true
+  startClashProgress()
   try {
     const result = await adminAPI.proxies.importClashSubscription({
       url,
@@ -1323,9 +1656,16 @@ const handleClashImport = async () => {
       start_socks_port: clashImportForm.start_socks_port,
       limit: clashImportForm.limit,
       restart_sidecars: clashImportForm.restart_sidecars,
-      test: clashImportForm.test
+      test: clashImportForm.test,
+      benchmark: {
+        enabled: clashImportForm.benchmark.enabled,
+        duration_seconds: clashImportForm.benchmark.duration_seconds,
+        top_n: clashImportForm.benchmark.top_n,
+        allowed_country_codes: clashImportForm.benchmark.allowed_country_codes
+      }
     })
     clashImportResult.value = result
+    finishClashProgress(result)
     if (result.imported > 0) {
       appStore.showSuccess(t('admin.proxies.clashImportSuccess', clashImportSummaryParams(result)))
       loadProxies()
@@ -1333,11 +1673,33 @@ const handleClashImport = async () => {
     }
     appStore.showInfo(t('admin.proxies.clashImportEmpty'))
   } catch (error: any) {
-    appStore.showError(error.response?.data?.detail || error.message || t('admin.proxies.clashImportFailed'))
+    const message = apiErrorMessage(error, t('admin.proxies.clashImportFailed'))
+    failClashProgress(message)
+    appStore.showError(message)
     console.error('Error importing Clash subscription:', error)
   } finally {
     clashImporting.value = false
   }
+}
+
+const clashProgressStageClass = (stage: { key: ClashProgressStage; start: number }) => {
+  if (clashProgress.stage === 'error' && stage.start <= clashProgress.percent) {
+    return 'text-red-600 dark:text-red-300'
+  }
+  if (clashProgress.stage === stage.key) {
+    return 'font-medium text-primary-700 dark:text-primary-300'
+  }
+  if (stage.start <= clashProgress.percent) {
+    return 'text-emerald-700 dark:text-emerald-300'
+  }
+  return 'text-gray-500 dark:text-gray-400'
+}
+
+const clashProgressStageIcon = (stage: { key: ClashProgressStage; start: number }) => {
+  if (clashProgress.stage === 'error' && stage.start <= clashProgress.percent) return 'exclamationCircle'
+  if (clashProgress.stage === stage.key && clashImporting.value) return 'refresh'
+  if (stage.start <= clashProgress.percent) return 'checkCircle'
+  return 'clock'
 }
 
 const clashActionClass = (action: string) => {
@@ -1363,6 +1725,31 @@ const clashImportSummaryParams = (result: ClashSubscriptionImportResult): Record
   skipped: result.skipped,
   failed: result.failed
 })
+
+const clashBenchmarkSummaryParams = (result: ClashSubscriptionImportResult): Record<string, number> => ({
+  requested: result.benchmark?.requested || 0,
+  eligible: result.benchmark?.eligible || 0,
+  selected: result.benchmark?.selected || 0,
+  duration: result.benchmark?.duration_seconds || 0
+})
+
+const toggleClashBenchmarkRegion = (code: string, event: Event) => {
+  const checked = (event.target as HTMLInputElement).checked
+  const regions = clashImportForm.benchmark.allowed_country_codes
+  if (checked && !regions.includes(code)) {
+    regions.push(code)
+    return
+  }
+  if (!checked) {
+    const index = regions.indexOf(code)
+    if (index >= 0) regions.splice(index, 1)
+  }
+}
+
+const formatPercent = (value?: number) => {
+  if (typeof value !== 'number') return '-'
+  return `${Math.round(value * 100)}%`
+}
 
 // Parse proxy URL: protocol://user:pass@host:port or protocol://host:port
 const parseProxyUrl = (

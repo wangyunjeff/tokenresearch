@@ -263,7 +263,7 @@ export async function importClashSubscription(
   const { data } = await apiClient.post<ClashSubscriptionImportResult>(
     '/admin/proxies/clash-subscription/import',
     payload,
-    { timeout: 120000 }
+    { timeout: 420000 }
   )
   return data
 }

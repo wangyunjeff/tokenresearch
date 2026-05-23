@@ -46,13 +46,21 @@ type UpdateProxyRequest struct {
 }
 
 type ClashSubscriptionImportRequest struct {
-	URL             string `json:"url"`
-	Config          string `json:"config"`
-	Filter          string `json:"filter"`
-	StartSocksPort  int    `json:"start_socks_port"`
-	Limit           int    `json:"limit"`
-	RestartSidecars bool   `json:"restart_sidecars"`
-	Test            bool   `json:"test"`
+	URL             string                            `json:"url"`
+	Config          string                            `json:"config"`
+	Filter          string                            `json:"filter"`
+	StartSocksPort  int                               `json:"start_socks_port"`
+	Limit           int                               `json:"limit"`
+	RestartSidecars bool                              `json:"restart_sidecars"`
+	Test            bool                              `json:"test"`
+	Benchmark       ClashSubscriptionBenchmarkRequest `json:"benchmark"`
+}
+
+type ClashSubscriptionBenchmarkRequest struct {
+	Enabled             bool     `json:"enabled"`
+	DurationSeconds     int      `json:"duration_seconds"`
+	TopN                int      `json:"top_n"`
+	AllowedCountryCodes []string `json:"allowed_country_codes"`
 }
 
 // List handles listing all proxies with pagination
@@ -251,12 +259,32 @@ func (h *ProxyHandler) ImportClashSubscription(c *gin.Context) {
 		Limit:           req.Limit,
 		RestartSidecars: req.RestartSidecars,
 		Test:            req.Test,
+		Benchmark: service.ClashSubscriptionBenchmarkInput{
+			Enabled:             req.Benchmark.Enabled,
+			DurationSeconds:     req.Benchmark.DurationSeconds,
+			TopN:                req.Benchmark.TopN,
+			AllowedCountryCodes: normalizeCountryCodes(req.Benchmark.AllowedCountryCodes),
+		},
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 	response.Success(c, result)
+}
+
+func normalizeCountryCodes(codes []string) []string {
+	out := make([]string, 0, len(codes))
+	seen := make(map[string]bool, len(codes))
+	for _, code := range codes {
+		code = strings.ToUpper(strings.TrimSpace(code))
+		if code == "" || seen[code] {
+			continue
+		}
+		seen[code] = true
+		out = append(out, code)
+	}
+	return out
 }
 
 // Test handles testing proxy connectivity

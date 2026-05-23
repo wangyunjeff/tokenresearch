@@ -86,10 +86,11 @@ func TestWriteClashSidecarConfig(t *testing.T) {
 		ControllerPort: 19110,
 	}
 	node := map[string]any{
-		"name":   "US Test",
-		"type":   "ss",
-		"server": "example.com",
-		"port":   443,
+		"name":                  "US Test",
+		"type":                  "ss",
+		"server":                "example.com",
+		"port":                  443,
+		clashImportBenchNodeKey: "bench-key",
 	}
 
 	require.NoError(t, writeClashSidecarConfig(root, spec, node))
@@ -99,5 +100,76 @@ func TestWriteClashSidecarConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(config), "socks-port: 17920")
 	require.Contains(t, string(config), "external-controller: 127.0.0.1:19110")
+	require.NotContains(t, string(config), clashImportBenchNodeKey)
 	require.FileExists(t, metaPath)
+}
+
+func TestClashSidecarRootIgnoresDataDirByDefault(t *testing.T) {
+	t.Setenv(clashSidecarRootEnv, "")
+	t.Setenv("DATA_DIR", t.TempDir())
+
+	require.Equal(t, clashDefaultSidecarRoot, clashSidecarRoot())
+}
+
+func TestClashSidecarRootEnvOverride(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(clashSidecarRootEnv, root)
+
+	require.Equal(t, root, clashSidecarRoot())
+}
+
+func TestNormalizeClashBenchmarkInput(t *testing.T) {
+	input := normalizeClashBenchmarkInput(ClashSubscriptionBenchmarkInput{
+		Enabled:             true,
+		DurationSeconds:     30,
+		TopN:                0,
+		AllowedCountryCodes: []string{"us", "US", " sg ", ""},
+	})
+
+	require.Equal(t, clashImportBenchMinSeconds, input.DurationSeconds)
+	require.Equal(t, clashImportBenchDefaultTop, input.TopN)
+	require.Equal(t, []string{"US", "SG"}, input.AllowedCountryCodes)
+}
+
+func TestSelectClashBenchmarkWinnersFiltersOpenAIAndCountry(t *testing.T) {
+	results := map[string]*ClashNodeBenchmarkResult{
+		"us-fast": {
+			Name:         "US Fast",
+			Samples:      3,
+			Successes:    3,
+			AvgLatencyMs: 500,
+			CountryCode:  "US",
+		},
+		"sg-slow": {
+			Name:         "SG Slow",
+			Samples:      3,
+			Successes:    3,
+			AvgLatencyMs: 1200,
+			CountryCode:  "SG",
+		},
+		"de-fast": {
+			Name:         "DE Fast",
+			Samples:      3,
+			Successes:    3,
+			AvgLatencyMs: 100,
+			CountryCode:  "DE",
+		},
+		"jp-bad": {
+			Name:         "JP Bad",
+			Samples:      3,
+			Successes:    0,
+			AvgLatencyMs: 0,
+			CountryCode:  "JP",
+		},
+	}
+	finalizeClashBenchmarkResults(results, []string{"US", "SG", "JP"})
+
+	winners := selectClashBenchmarkWinners(results, 10)
+
+	require.Equal(t, []string{"us-fast", "sg-slow"}, winners)
+	require.True(t, results["us-fast"].Eligible)
+	require.False(t, results["de-fast"].Eligible)
+	require.Contains(t, results["de-fast"].Reason, "DE")
+	require.False(t, results["jp-bad"].Eligible)
+	require.Equal(t, "OpenAI 不可达", results["jp-bad"].Reason)
 }

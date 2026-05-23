@@ -3,7 +3,13 @@ set -euo pipefail
 
 ROOT="${ROOT:-/mnt/data/service_codex2}"
 SIDECAR_ROOT="${SIDECAR_ROOT:-$ROOT/backend/data/proxy_sidecars}"
-CLASH_BIN="${CLASH_BIN:-/home/ike/Downloads/clash/clash-linux-amd64-v1.18.0}"
+if [[ -z "${CLASH_BIN:-}" ]]; then
+  if [[ -x /usr/bin/verge-mihomo ]]; then
+    CLASH_BIN="/usr/bin/verge-mihomo"
+  else
+    CLASH_BIN="/home/ike/Downloads/clash/clash-linux-amd64-v1.18.0"
+  fi
+fi
 
 declare -a CHILD_PIDS=()
 declare -a PID_FILES=()

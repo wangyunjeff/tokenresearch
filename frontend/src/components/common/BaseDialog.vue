@@ -18,6 +18,7 @@
               {{ title }}
             </h3>
             <button
+              v-if="closable"
               @click="emit('close')"
               class="-mr-2 rounded-xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-dark-500 dark:hover:bg-dark-700 dark:hover:text-dark-300"
               aria-label="Close modal"
@@ -62,6 +63,7 @@ interface Props {
   closeOnEscape?: boolean
   closeOnClickOutside?: boolean
   zIndex?: number
+  closable?: boolean
 }
 
 interface Emits {
@@ -72,7 +74,8 @@ const props = withDefaults(defineProps<Props>(), {
   width: 'normal',
   closeOnEscape: true,
   closeOnClickOutside: false,
-  zIndex: 50
+  zIndex: 50,
+  closable: true
 })
 
 const emit = defineEmits<Emits>()
@@ -97,13 +100,13 @@ const widthClasses = computed(() => {
 })
 
 const handleClose = () => {
-  if (props.closeOnClickOutside) {
+  if (props.closable && props.closeOnClickOutside) {
     emit('close')
   }
 }
 
 const handleEscape = (event: KeyboardEvent) => {
-  if (props.show && props.closeOnEscape && event.key === 'Escape') {
+  if (props.show && props.closable && props.closeOnEscape && event.key === 'Escape') {
     emit('close')
   }
 }
