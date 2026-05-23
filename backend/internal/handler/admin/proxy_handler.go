@@ -45,6 +45,16 @@ type UpdateProxyRequest struct {
 	Status   string `json:"status" binding:"omitempty,oneof=active inactive"`
 }
 
+type ClashSubscriptionImportRequest struct {
+	URL             string `json:"url"`
+	Config          string `json:"config"`
+	Filter          string `json:"filter"`
+	StartSocksPort  int    `json:"start_socks_port"`
+	Limit           int    `json:"limit"`
+	RestartSidecars bool   `json:"restart_sidecars"`
+	Test            bool   `json:"test"`
+}
+
 // List handles listing all proxies with pagination
 // GET /api/v1/admin/proxies
 func (h *ProxyHandler) List(c *gin.Context) {
@@ -218,6 +228,34 @@ func (h *ProxyHandler) BatchDelete(c *gin.Context) {
 		return
 	}
 
+	response.Success(c, result)
+}
+
+// ImportClashSubscription imports Clash subscription nodes as local sidecar proxies.
+// CUSTOM(service_codex2): endpoint kept separate from upstream proxy CRUD routes.
+func (h *ProxyHandler) ImportClashSubscription(c *gin.Context) {
+	var req ClashSubscriptionImportRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(req.URL) == "" && strings.TrimSpace(req.Config) == "" {
+		response.BadRequest(c, "subscription url or config is required")
+		return
+	}
+	result, err := h.adminService.ImportClashSubscription(c.Request.Context(), service.ClashSubscriptionImportInput{
+		URL:             strings.TrimSpace(req.URL),
+		Config:          req.Config,
+		Filter:          strings.TrimSpace(req.Filter),
+		StartSocksPort:  req.StartSocksPort,
+		Limit:           req.Limit,
+		RestartSidecars: req.RestartSidecars,
+		Test:            req.Test,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	response.Success(c, result)
 }
 

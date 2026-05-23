@@ -12,7 +12,9 @@ import type {
   UpdateProxyRequest,
   PaginatedResponse,
   AdminDataPayload,
-  AdminDataImportResult
+  AdminDataImportResult,
+  ClashSubscriptionImportRequest,
+  ClashSubscriptionImportResult
 } from '@/types'
 
 /**
@@ -255,6 +257,17 @@ export async function importData(payload: {
   return data
 }
 
+export async function importClashSubscription(
+  payload: ClashSubscriptionImportRequest
+): Promise<ClashSubscriptionImportResult> {
+  const { data } = await apiClient.post<ClashSubscriptionImportResult>(
+    '/admin/proxies/clash-subscription/import',
+    payload,
+    { timeout: 120000 }
+  )
+  return data
+}
+
 export const proxiesAPI = {
   list,
   getAll,
@@ -271,7 +284,8 @@ export const proxiesAPI = {
   batchCreate,
   batchDelete,
   exportData,
-  importData
+  importData,
+  importClashSubscription
 }
 
 export default proxiesAPI

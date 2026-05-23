@@ -42,6 +42,7 @@ func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 
 	router.GET("/api/v1/admin/proxies", proxyHandler.List)
 	router.GET("/api/v1/admin/proxies/all", proxyHandler.GetAll)
+	router.POST("/api/v1/admin/proxies/clash-subscription/import", proxyHandler.ImportClashSubscription)
 	router.GET("/api/v1/admin/proxies/:id", proxyHandler.GetByID)
 	router.POST("/api/v1/admin/proxies", proxyHandler.Create)
 	router.PUT("/api/v1/admin/proxies/:id", proxyHandler.Update)
@@ -208,7 +209,7 @@ func TestGroupHandlerEndpoints(t *testing.T) {
 }
 
 func TestProxyHandlerEndpoints(t *testing.T) {
-	router, _ := setupAdminRouter()
+	router, adminSvc := setupAdminRouter()
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/proxies", nil)
@@ -269,6 +270,24 @@ func TestProxyHandlerEndpoints(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/proxies/4/accounts", nil)
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
+
+	body, _ = json.Marshal(map[string]any{
+		"config":           "proxies:\n- name: test\n  type: ss\n  server: example.com\n  port: 443\n",
+		"filter":           "test",
+		"start_socks_port": 17920,
+		"limit":            10,
+		"restart_sidecars": true,
+		"test":             true,
+	})
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/proxies/clash-subscription/import", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "test", adminSvc.lastClashImport.Filter)
+	require.Equal(t, 17920, adminSvc.lastClashImport.StartSocksPort)
+	require.True(t, adminSvc.lastClashImport.RestartSidecars)
+	require.True(t, adminSvc.lastClashImport.Test)
 }
 
 func TestRedeemHandlerEndpoints(t *testing.T) {

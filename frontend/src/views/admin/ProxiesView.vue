@@ -76,6 +76,10 @@
             <button @click="showImportData = true" class="btn btn-secondary">
               {{ t('admin.proxies.dataImport') }}
             </button>
+            <button @click="openClashImportModal" class="btn btn-secondary">
+              <Icon name="globe" size="md" class="mr-2" />
+              {{ t('admin.proxies.clashImport') }}
+            </button>
             <button @click="showExportDataDialog = true" class="btn btn-secondary">
               {{ selectedCount > 0 ? t('admin.proxies.dataExportSelected') : t('admin.proxies.dataExport') }}
             </button>
@@ -749,6 +753,126 @@
     />
 
     <BaseDialog
+      :show="showClashImportModal"
+      :title="t('admin.proxies.clashImportTitle')"
+      width="wide"
+      @close="closeClashImportModal"
+    >
+      <div class="space-y-5">
+        <div class="grid gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.proxies.clashSubscriptionUrl') }}</label>
+            <input
+              v-model="clashImportForm.url"
+              type="text"
+              class="input"
+              :placeholder="t('admin.proxies.clashSubscriptionUrlPlaceholder')"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.proxies.clashFilter') }}</label>
+            <input
+              v-model="clashImportForm.filter"
+              type="text"
+              class="input"
+              :placeholder="t('admin.proxies.clashFilterPlaceholder')"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="input-label">{{ t('admin.proxies.clashConfigText') }}</label>
+          <textarea
+            v-model="clashImportForm.config"
+            rows="7"
+            class="input font-mono text-sm"
+            :placeholder="t('admin.proxies.clashConfigTextPlaceholder')"
+          ></textarea>
+          <p class="input-hint mt-2">
+            {{ t('admin.proxies.clashConfigTextHint') }}
+          </p>
+        </div>
+
+        <div class="grid gap-4 md:grid-cols-3">
+          <div>
+            <label class="input-label">{{ t('admin.proxies.clashStartPort') }}</label>
+            <input v-model.number="clashImportForm.start_socks_port" type="number" min="1" max="65535" class="input" />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.proxies.clashLimit') }}</label>
+            <input v-model.number="clashImportForm.limit" type="number" min="1" max="300" class="input" />
+          </div>
+          <div class="flex flex-col justify-end gap-2 pb-1">
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input v-model="clashImportForm.restart_sidecars" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600" />
+              {{ t('admin.proxies.clashRestartSidecars') }}
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input v-model="clashImportForm.test" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600" />
+              {{ t('admin.proxies.clashTestAfterImport') }}
+            </label>
+          </div>
+        </div>
+
+        <div v-if="clashImportResult" class="rounded-lg border border-gray-200 dark:border-dark-600">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-3 text-sm dark:border-dark-600 dark:bg-dark-800">
+            <div class="font-medium text-gray-900 dark:text-white">
+              {{ t('admin.proxies.clashImportSummary', clashImportSummaryParams(clashImportResult)) }}
+            </div>
+            <div v-if="clashImportResult.restart_error" class="text-red-600 dark:text-red-400">
+              {{ clashImportResult.restart_error }}
+            </div>
+            <div v-else-if="clashImportResult.restarted" class="text-primary-600 dark:text-primary-400">
+              {{ t('admin.proxies.clashRestarted') }}
+            </div>
+            <div v-else-if="clashImportResult.restart_required" class="text-amber-600 dark:text-amber-400">
+              {{ t('admin.proxies.clashRestartRequired') }}
+            </div>
+          </div>
+          <div class="max-h-72 overflow-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-dark-700">
+              <thead class="bg-white text-xs uppercase text-gray-500 dark:bg-dark-900 dark:text-dark-400">
+                <tr>
+                  <th class="px-3 py-2 text-left">{{ t('admin.proxies.name') }}</th>
+                  <th class="px-3 py-2 text-left">{{ t('admin.proxies.protocol') }}</th>
+                  <th class="px-3 py-2 text-left">{{ t('admin.proxies.status') }}</th>
+                  <th class="px-3 py-2 text-left">SOCKS</th>
+                  <th class="px-3 py-2 text-left">{{ t('admin.proxies.qualityTableMessage') }}</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-900">
+                <tr v-for="item in clashImportResult.items" :key="`${item.key}-${item.socks_port}`">
+                  <td class="max-w-xs truncate px-3 py-2 font-medium text-gray-900 dark:text-white" :title="item.name">{{ item.name }}</td>
+                  <td class="px-3 py-2 text-gray-600 dark:text-gray-300">{{ item.type || '-' }}</td>
+                  <td class="px-3 py-2">
+                    <span class="badge" :class="clashActionClass(item.action)">{{ clashActionLabel(item.action) }}</span>
+                  </td>
+                  <td class="px-3 py-2 font-mono text-xs text-gray-600 dark:text-gray-300">{{ item.socks_url || '-' }}</td>
+                  <td class="px-3 py-2 text-gray-600 dark:text-gray-300">
+                    <span v-if="item.error">{{ item.error }}</span>
+                    <span v-else-if="item.test">{{ item.test.success ? item.test.message : item.test.message }}</span>
+                    <span v-else>-</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button @click="closeClashImportModal" type="button" class="btn btn-secondary">
+            {{ t('common.cancel') }}
+          </button>
+          <button @click="handleClashImport" type="button" :disabled="clashImporting" class="btn btn-primary">
+            <Icon v-if="clashImporting" name="refresh" size="sm" class="mr-2 animate-spin" />
+            {{ clashImporting ? t('admin.proxies.clashImporting') : t('admin.proxies.clashImportButton') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <BaseDialog
       :show="showQualityReportDialog"
       :title="t('admin.proxies.qualityReportTitle')"
       width="normal"
@@ -876,7 +1000,7 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
-import type { Proxy, ProxyAccountSummary, ProxyProtocol, ProxyQualityCheckResult } from '@/types'
+import type { ClashSubscriptionImportResult, Proxy, ProxyAccountSummary, ProxyProtocol, ProxyQualityCheckResult } from '@/types'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
@@ -965,6 +1089,7 @@ const showEditModal = ref(false)
 const editPasswordVisible = ref(false)
 const editPasswordDirty = ref(false)
 const showImportData = ref(false)
+const showClashImportModal = ref(false)
 const showDeleteDialog = ref(false)
 const showBatchDeleteDialog = ref(false)
 const showExportDataDialog = ref(false)
@@ -1005,6 +1130,17 @@ const deletingProxy = ref<Proxy | null>(null)
 const showQualityReportDialog = ref(false)
 const qualityReportProxy = ref<Proxy | null>(null)
 const qualityReport = ref<ProxyQualityCheckResult | null>(null)
+const clashImporting = ref(false)
+const clashImportResult = ref<ClashSubscriptionImportResult | null>(null)
+const clashImportForm = reactive({
+  url: '',
+  config: '',
+  filter: '',
+  start_socks_port: 17920,
+  limit: 50,
+  restart_sidecars: true,
+  test: false
+})
 
 // Batch import state
 const createMode = ref<'standard' | 'batch'>('standard')
@@ -1155,6 +1291,78 @@ const handleDataImported = () => {
   showImportData.value = false
   loadProxies()
 }
+
+const openClashImportModal = () => {
+  showClashImportModal.value = true
+}
+
+const closeClashImportModal = () => {
+  showClashImportModal.value = false
+  clashImporting.value = false
+  clashImportResult.value = null
+}
+
+const handleClashImport = async () => {
+  const url = clashImportForm.url.trim()
+  const config = clashImportForm.config.trim()
+  if (!url && !config) {
+    appStore.showError(t('admin.proxies.clashImportNeedSource'))
+    return
+  }
+  if (clashImportForm.start_socks_port < 1 || clashImportForm.start_socks_port > 65535) {
+    appStore.showError(t('admin.proxies.portInvalid'))
+    return
+  }
+
+  clashImporting.value = true
+  try {
+    const result = await adminAPI.proxies.importClashSubscription({
+      url,
+      config,
+      filter: clashImportForm.filter.trim(),
+      start_socks_port: clashImportForm.start_socks_port,
+      limit: clashImportForm.limit,
+      restart_sidecars: clashImportForm.restart_sidecars,
+      test: clashImportForm.test
+    })
+    clashImportResult.value = result
+    if (result.imported > 0) {
+      appStore.showSuccess(t('admin.proxies.clashImportSuccess', clashImportSummaryParams(result)))
+      loadProxies()
+      return
+    }
+    appStore.showInfo(t('admin.proxies.clashImportEmpty'))
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || error.message || t('admin.proxies.clashImportFailed'))
+    console.error('Error importing Clash subscription:', error)
+  } finally {
+    clashImporting.value = false
+  }
+}
+
+const clashActionClass = (action: string) => {
+  if (action === 'created') return 'badge-success'
+  if (action === 'updated') return 'badge-info'
+  if (action === 'skipped') return 'badge-warning'
+  return 'badge-danger'
+}
+
+const clashActionLabel = (action: string) => {
+  if (action === 'created') return t('admin.proxies.clashActionCreated')
+  if (action === 'updated') return t('admin.proxies.clashActionUpdated')
+  if (action === 'skipped') return t('admin.proxies.clashActionSkipped')
+  if (action === 'failed') return t('admin.proxies.clashActionFailed')
+  return action
+}
+
+const clashImportSummaryParams = (result: ClashSubscriptionImportResult): Record<string, number> => ({
+  total: result.total,
+  imported: result.imported,
+  created: result.created,
+  updated: result.updated,
+  skipped: result.skipped,
+  failed: result.failed
+})
 
 // Parse proxy URL: protocol://user:pass@host:port or protocol://host:port
 const parseProxyUrl = (

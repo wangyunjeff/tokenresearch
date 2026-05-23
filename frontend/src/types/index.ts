@@ -1055,6 +1055,51 @@ export interface UpdateProxyRequest {
   status?: 'active' | 'inactive'
 }
 
+export interface ClashSubscriptionImportRequest {
+  url?: string
+  config?: string
+  filter?: string
+  start_socks_port?: number
+  limit?: number
+  restart_sidecars?: boolean
+  test?: boolean
+}
+
+export interface ClashSubscriptionImportItem {
+  name: string
+  key: string
+  type: string
+  proxy_id?: number
+  action: 'created' | 'updated' | 'skipped' | 'failed' | string
+  socks_url?: string
+  http_port?: number
+  socks_port?: number
+  controller_port?: number
+  error?: string
+  test?: {
+    success: boolean
+    message: string
+    latency_ms?: number
+    ip_address?: string
+    country?: string
+    country_code?: string
+  }
+}
+
+export interface ClashSubscriptionImportResult {
+  total: number
+  imported: number
+  created: number
+  updated: number
+  skipped: number
+  failed: number
+  restart_required: boolean
+  restarted: boolean
+  restart_error?: string
+  restart_command: string
+  items: ClashSubscriptionImportItem[]
+}
+
 export interface AdminDataPayload {
   type?: string
   version?: number

@@ -23,6 +23,7 @@ type stubAdminService struct {
 	createdProxies       []*service.CreateProxyInput
 	updatedProxyIDs      []int64
 	updatedProxies       []*service.UpdateProxyInput
+	lastClashImport      service.ClashSubscriptionImportInput
 	testedProxyIDs       []int64
 	createAccountErr     error
 	updateAccountErr     error
@@ -509,6 +510,11 @@ func (s *stubAdminService) CheckProxyQuality(ctx context.Context, id int64) (*se
 			{Target: "gemini", Status: "pass", HTTPStatus: 200},
 		},
 	}, nil
+}
+
+func (s *stubAdminService) ImportClashSubscription(ctx context.Context, input service.ClashSubscriptionImportInput) (*service.ClashSubscriptionImportResult, error) {
+	s.lastClashImport = input
+	return &service.ClashSubscriptionImportResult{Total: 1, Imported: 1, Created: 1}, nil
 }
 
 func (s *stubAdminService) ListRedeemCodes(ctx context.Context, page, pageSize int, codeType, status, search string, sortBy, sortOrder string) ([]service.RedeemCode, int64, error) {
