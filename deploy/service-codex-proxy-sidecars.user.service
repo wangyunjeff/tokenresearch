@@ -1,0 +1,13 @@
+[Unit]
+Description=Service Codex VPN proxy sidecars
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/data/service_codex2
+ExecStart=/mnt/data/service_codex2/tools/run_proxy_sidecars.sh
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

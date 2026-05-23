@@ -97,14 +97,14 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 			cleanPath = "index.html"
 		}
 
-		// For index.html or SPA routes, serve with injected settings
-		if cleanPath == "index.html" || !s.fileExists(cleanPath) {
-			s.serveIndexHTML(c)
+		// Try local override first
+		if s.tryServeOverride(c, cleanPath) {
 			return
 		}
 
-		// Try local override first
-		if s.tryServeOverride(c, cleanPath) {
+		// For index.html or SPA routes, serve with injected settings
+		if cleanPath == "index.html" || !s.fileExists(cleanPath) {
+			s.serveIndexHTML(c)
 			return
 		}
 

@@ -7,6 +7,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -540,6 +542,31 @@ func TestFrontendServer_Middleware(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Header().Get("Content-Type"), "image/png")
+	})
+
+	t.Run("serves_local_override_before_spa_fallback", func(t *testing.T) {
+		provider := &mockSettingsProvider{
+			settings: map[string]string{"test": "value"},
+		}
+
+		server, err := NewFrontendServer(provider)
+		require.NoError(t, err)
+
+		overrideDir := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(overrideDir, "announcements"), 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(overrideDir, "announcements", "join-group.jpg"), []byte("fake image"), 0644))
+		server.overrideDir = overrideDir
+
+		router := gin.New()
+		router.Use(server.Middleware())
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/announcements/join-group.jpg", nil)
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, "fake image", w.Body.String())
+		assert.NotContains(t, w.Header().Get("Content-Type"), "text/html")
 	})
 }
 

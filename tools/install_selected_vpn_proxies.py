@@ -9,6 +9,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+import argparse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -35,25 +36,11 @@ class SidecarSpec:
 
 SELECTED_SIDECARS = [
     SidecarSpec(
-        key="sg_bgp",
-        name="新加坡BGP[M][Trojan][倍率:0.7]",
-        http_port=17801,
-        socks_port=17901,
-        controller_port=19091,
-    ),
-    SidecarSpec(
-        key="us_an_test",
-        name="美国AN[M][Trojan][测试][倍率:0.5]",
-        http_port=17802,
-        socks_port=17902,
-        controller_port=19092,
-    ),
-    SidecarSpec(
-        key="us_gs5",
-        name="上海电信转美国GS5[Trojan][倍率:1]",
-        http_port=17803,
-        socks_port=17903,
-        controller_port=19093,
+        key="uk_cv_shct",
+        name="上海电信转英国CV[Trojan][倍率:1]",
+        http_port=17805,
+        socks_port=17905,
+        controller_port=19095,
     ),
     SidecarSpec(
         key="uk_cv_test",
@@ -62,12 +49,69 @@ SELECTED_SIDECARS = [
         socks_port=17904,
         controller_port=19094,
     ),
+    SidecarSpec(
+        key="us_bgp3",
+        name="美国BGP3[M][Trojan][倍率:0.6]",
+        http_port=17806,
+        socks_port=17906,
+        controller_port=19096,
+    ),
+    SidecarSpec(
+        key="us_bgp",
+        name="美国BGP[M][Trojan][倍率:0.6]",
+        http_port=17807,
+        socks_port=17907,
+        controller_port=19097,
+    ),
+    SidecarSpec(
+        key="us_bgp2",
+        name="美国BGP2[M][Trojan][倍率:0.6]",
+        http_port=17808,
+        socks_port=17908,
+        controller_port=19098,
+    ),
+    SidecarSpec(
+        key="us_gs6",
+        name="上海电信转美国GS6[Trojan][倍率:1]",
+        http_port=17809,
+        socks_port=17909,
+        controller_port=19099,
+    ),
+    SidecarSpec(
+        key="us_gs7",
+        name="上海电信转美国GS7[Trojan][倍率:1]",
+        http_port=17810,
+        socks_port=17910,
+        controller_port=19100,
+    ),
+    SidecarSpec(
+        key="us_an_szhk",
+        name="深港专线转美国AN[M][Trojan][倍率:2.5]",
+        http_port=17811,
+        socks_port=17911,
+        controller_port=19101,
+    ),
+    SidecarSpec(
+        key="us_an_shct",
+        name="上海电信转美国AN[M][Trojan][倍率:1]",
+        http_port=17812,
+        socks_port=17912,
+        controller_port=19102,
+    ),
+    SidecarSpec(
+        key="us_an_test",
+        name="美国AN[M][Trojan][测试][倍率:0.5]",
+        http_port=17802,
+        socks_port=17902,
+        controller_port=19092,
+    ),
 ]
 
 
 def parse_vpn_markdown(path: Path) -> dict[str, dict[str, Any]]:
     text = path.read_text(encoding="utf-8")
     in_code = False
+    code_lang = ""
     block_lines: list[str] = []
     proxies: dict[str, dict[str, Any]] = {}
 
@@ -76,13 +120,21 @@ def parse_vpn_markdown(path: Path) -> dict[str, dict[str, Any]]:
         if line.startswith("```"):
             if not in_code:
                 in_code = True
+                code_lang = line[3:].strip().split(maxsplit=1)[0].lower()
                 block_lines = []
             else:
                 block_text = "\n".join(block_lines).strip()
                 in_code = False
+                lang = code_lang
+                code_lang = ""
+                if lang and lang not in {"yaml", "yml"}:
+                    continue
                 if not block_text:
                     continue
-                loaded = yaml.safe_load(block_text)
+                try:
+                    loaded = yaml.safe_load(block_text)
+                except yaml.YAMLError:
+                    continue
                 if not isinstance(loaded, list):
                     continue
                 for item in loaded:
@@ -240,6 +292,42 @@ def start_sidecar(proxy: dict[str, Any], spec: SidecarSpec) -> dict[str, Any]:
     return meta
 
 
+def configure_sidecar(proxy: dict[str, Any], spec: SidecarSpec) -> dict[str, Any]:
+    sidecar_dir = SIDECAR_ROOT / spec.key
+    home_dir = sidecar_dir / "home"
+    log_path = sidecar_dir / "clash.log"
+    config_path = sidecar_dir / "config.yaml"
+    pid_path = sidecar_dir / "clash.pid"
+    meta_path = sidecar_dir / "meta.json"
+
+    sidecar_dir.mkdir(parents=True, exist_ok=True)
+    home_dir.mkdir(parents=True, exist_ok=True)
+
+    config = build_clash_config(proxy, spec)
+    config_path.write_text(
+        yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    pid: int | None = None
+    if pid_path.exists():
+        raw = pid_path.read_text(encoding="utf-8").strip()
+        if raw.isdigit():
+            pid = int(raw)
+
+    meta = {
+        "name": spec.name,
+        "http_port": spec.http_port,
+        "socks_port": spec.socks_port,
+        "controller_port": spec.controller_port,
+        "pid": pid,
+        "config_path": str(config_path),
+        "log_path": str(log_path),
+    }
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return meta
+
+
 def upsert_project_proxy(conn: psycopg.Connection[Any], spec: SidecarSpec) -> dict[str, Any]:
     with conn.cursor() as cur:
         cur.execute(
@@ -312,6 +400,14 @@ def verify_local_proxy(spec: SidecarSpec) -> dict[str, Any]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--configure-only",
+        action="store_true",
+        help="write sidecar configs and database rows without starting Clash processes",
+    )
+    args = parser.parse_args()
+
     if not CLASH_BIN.exists():
         raise RuntimeError(f"clash binary not found: {CLASH_BIN}")
     SIDECAR_ROOT.mkdir(parents=True, exist_ok=True)
@@ -326,8 +422,12 @@ def main() -> int:
 
     started: list[dict[str, Any]] = []
     for spec, proxy in selected_proxies:
-        meta = start_sidecar(proxy, spec)
-        verify = verify_local_proxy(spec)
+        if args.configure_only:
+            meta = configure_sidecar(proxy, spec)
+            verify = {"skipped": True}
+        else:
+            meta = start_sidecar(proxy, spec)
+            verify = verify_local_proxy(spec)
         started.append({"spec": spec, "meta": meta, "verify": verify})
 
     dsn = load_database_dsn()
@@ -338,7 +438,8 @@ def main() -> int:
             db_rows.append({"name": item["spec"].name, **result})
         conn.commit()
 
-    print("Installed selected VPN proxies:")
+    verb = "Configured" if args.configure_only else "Installed"
+    print(f"{verb} selected VPN proxies:")
     for item in started:
         spec = item["spec"]
         verify = item["verify"]

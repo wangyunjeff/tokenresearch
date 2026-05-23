@@ -15,7 +15,7 @@ BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups/sub2api-bin}"
 LOCK_FILE="${LOCK_FILE:-$STATE_DIR/sub2api-switch.lock}"
 
 RELEASE_REPO="${RELEASE_REPO:-Wei-Shaw/sub2api}"
-TARGET_VERSION="${TARGET_VERSION:-0.1.115}"
+TARGET_VERSION="${TARGET_VERSION:-0.1.126}"
 SERVICE_PORT="${SERVICE_PORT:-8080}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:${SERVICE_PORT}/health}"
 DOWNLOAD_PROXY="${DOWNLOAD_PROXY:-}"
@@ -36,7 +36,7 @@ Usage:
   tools/switch_sub2api_release.sh [options]
 
 Options:
-  --version <x.y.z|vx.y.z>  Target version, default: 0.1.115
+  --version <x.y.z|vx.y.z>  Target version, default: 0.1.126
   --proxy <url>             Download proxy URL, e.g. http://127.0.0.1:7890
   --port <port>             Service port, default: 8080
   --health-url <url>        Health check URL
@@ -48,8 +48,8 @@ Options:
   --help                    Show this message
 
 Examples:
-  tools/switch_sub2api_release.sh --version 0.1.115
-  tools/switch_sub2api_release.sh --version v0.1.115 --proxy http://127.0.0.1:7890
+  tools/switch_sub2api_release.sh --version 0.1.126
+  tools/switch_sub2api_release.sh --version v0.1.126 --proxy http://127.0.0.1:7890
 EOF
 }
 
@@ -190,6 +190,8 @@ start_process() {
 
   (
     cd "$BACKEND_DIR"
+    # Do not leak the lock fd into the long-running service process.
+    exec 9>&-
     nohup ./sub2api >"$log_path" 2>&1 < /dev/null &
     echo "$!" >"$pid_path"
   )

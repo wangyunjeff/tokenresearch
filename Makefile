@@ -9,7 +9,8 @@ FRONTEND_CRITICAL_VITEST := \
 	src/views/admin/__tests__/SettingsView.spec.ts
 
 # 一键编译前后端
-build: build-backend build-frontend
+# 先编译前端，再把 dist 嵌入后端二进制。
+build: build-frontend build-backend
 
 # 编译后端（复用 backend/Makefile）
 build-backend:

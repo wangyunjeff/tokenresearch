@@ -105,6 +105,14 @@ backend/internal/web/dist/*
 # 后端运行时缓存数据
 backend/data/
 
+# Local deployment/runtime artifacts for this customized checkout.
+backups/
+custom-pages/
+custom-notebooks/
+tools/__pycache__/
+vpn_benchmark_*.json
+vpn_benchmark_*.md
+
 # ===================
 # 本地配置文件（包含敏感信息）
 # ===================
