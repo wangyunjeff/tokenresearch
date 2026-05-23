@@ -245,7 +245,7 @@ func (s *adminServiceImpl) ImportClashSubscription(ctx context.Context, input Cl
 		item.ControllerPort = spec.ControllerPort
 		item.SocksURL = fmt.Sprintf("socks5h://127.0.0.1:%d", spec.SocksPort)
 		if benchmarkByKey != nil {
-			benchmarkKey := stringFromAny(node[clashImportBenchNodeKey])
+			benchmarkKey := clashStringFromAny(node[clashImportBenchNodeKey])
 			if benchmarkKey != "" {
 				item.Benchmark = benchmarkByKey[benchmarkKey]
 			}
@@ -611,13 +611,13 @@ func parseVMessURI(raw string) (map[string]any, error) {
 	if err := json.Unmarshal(decoded, &cfg); err != nil {
 		return nil, err
 	}
-	server := strings.TrimSpace(stringFromAny(cfg["add"]))
+	server := strings.TrimSpace(clashStringFromAny(cfg["add"]))
 	port := yamlNumberToInt(cfg["port"])
-	uuid := strings.TrimSpace(stringFromAny(cfg["id"]))
+	uuid := strings.TrimSpace(clashStringFromAny(cfg["id"]))
 	if server == "" || port <= 0 || uuid == "" {
 		return nil, errors.New("invalid vmess uri")
 	}
-	name := strings.TrimSpace(stringFromAny(cfg["ps"]))
+	name := strings.TrimSpace(clashStringFromAny(cfg["ps"]))
 	if name == "" {
 		name = fmt.Sprintf("vmess-%s-%d", server, port)
 	}
@@ -628,23 +628,23 @@ func parseVMessURI(raw string) (map[string]any, error) {
 		"port":    port,
 		"uuid":    uuid,
 		"alterId": yamlNumberToInt(cfg["aid"]),
-		"cipher":  firstNonEmptyClashValue(stringFromAny(cfg["scy"]), "auto"),
+		"cipher":  firstNonEmptyClashValue(clashStringFromAny(cfg["scy"]), "auto"),
 	}
-	if strings.EqualFold(stringFromAny(cfg["tls"]), "tls") || strings.EqualFold(stringFromAny(cfg["tls"]), "true") {
+	if strings.EqualFold(clashStringFromAny(cfg["tls"]), "tls") || strings.EqualFold(clashStringFromAny(cfg["tls"]), "true") {
 		node["tls"] = true
 	}
-	if sni := firstNonEmptyClashValue(stringFromAny(cfg["sni"]), stringFromAny(cfg["host"])); sni != "" {
+	if sni := firstNonEmptyClashValue(clashStringFromAny(cfg["sni"]), clashStringFromAny(cfg["host"])); sni != "" {
 		node["servername"] = sni
 	}
-	network := strings.TrimSpace(stringFromAny(cfg["net"]))
+	network := strings.TrimSpace(clashStringFromAny(cfg["net"]))
 	switch network {
 	case "ws":
 		node["network"] = "ws"
 		wsOpts := map[string]any{}
-		if path := stringFromAny(cfg["path"]); path != "" {
+		if path := clashStringFromAny(cfg["path"]); path != "" {
 			wsOpts["path"] = path
 		}
-		if host := stringFromAny(cfg["host"]); host != "" {
+		if host := clashStringFromAny(cfg["host"]); host != "" {
 			wsOpts["headers"] = map[string]string{"Host": host}
 		}
 		if len(wsOpts) > 0 {
@@ -652,7 +652,7 @@ func parseVMessURI(raw string) (map[string]any, error) {
 		}
 	case "grpc":
 		node["network"] = "grpc"
-		if serviceName := stringFromAny(cfg["path"]); serviceName != "" {
+		if serviceName := clashStringFromAny(cfg["path"]); serviceName != "" {
 			node["grpc-opts"] = map[string]any{"grpc-service-name": serviceName}
 		}
 	case "tcp", "":
@@ -779,7 +779,7 @@ func firstQuery(q url.Values, keys ...string) string {
 	return ""
 }
 
-func stringFromAny(v any) string {
+func clashStringFromAny(v any) string {
 	switch value := v.(type) {
 	case string:
 		return strings.TrimSpace(value)
@@ -1324,9 +1324,9 @@ func copyClashNode(node map[string]any) map[string]any {
 func clashBenchmarkNodeKey(node map[string]any) string {
 	return strings.Join([]string{
 		clashNodeName(node),
-		stringFromAny(node["type"]),
-		stringFromAny(node["server"]),
-		stringFromAny(node["port"]),
+		clashStringFromAny(node["type"]),
+		clashStringFromAny(node["server"]),
+		clashStringFromAny(node["port"]),
 	}, "\x00")
 }
 

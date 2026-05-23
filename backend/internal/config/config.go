@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/viper"
@@ -72,6 +73,7 @@ type Config struct {
 	LinuxDo                 LinuxDoConnectConfig          `mapstructure:"linuxdo_connect"`
 	WeChat                  WeChatConnectConfig           `mapstructure:"wechat_connect"`
 	OIDC                    OIDCConnectConfig             `mapstructure:"oidc_connect"`
+	DingTalk                DingTalkConnectConfig         `mapstructure:"dingtalk_connect"`
 	GitHubOAuth             EmailOAuthProviderConfig      `mapstructure:"github_oauth"`
 	GoogleOAuth             EmailOAuthProviderConfig      `mapstructure:"google_oauth"`
 	Default                 DefaultConfig                 `mapstructure:"default"`
@@ -240,6 +242,47 @@ type OIDCConnectConfig struct {
 	UserInfoEmailPath    string `mapstructure:"userinfo_email_path"`
 	UserInfoIDPath       string `mapstructure:"userinfo_id_path"`
 	UserInfoUsernamePath string `mapstructure:"userinfo_username_path"`
+}
+
+type DingTalkConnectConfig struct {
+	Enabled             bool   `mapstructure:"enabled"`
+	ClientID            string `mapstructure:"client_id"`
+	ClientSecret        string `mapstructure:"client_secret"`
+	AuthorizeURL        string `mapstructure:"authorize_url"`
+	TokenURL            string `mapstructure:"token_url"`
+	UserInfoURL         string `mapstructure:"userinfo_url"`
+	Scopes              string `mapstructure:"scopes"`
+	RedirectURL         string `mapstructure:"redirect_url"`
+	FrontendRedirectURL string `mapstructure:"frontend_redirect_url"`
+
+	// 平台底座 + 业务行为
+	DingTalkAppKind string `mapstructure:"dingtalk_app_kind"` // 仅 "internal_app"（V4 fail-closed）
+	AppType         string `mapstructure:"app_type"`          // "public" (default) | "internal"
+
+	// Corp 限定（none | internal_only）
+	CorpRestrictionPolicy   string `mapstructure:"corp_restriction_policy"`
+	InternalCorpID          string `mapstructure:"internal_corp_id"`
+	BypassRegistration      bool   `mapstructure:"bypass_registration"`
+	SyncCorpEmail           bool   `mapstructure:"sync_corp_email"`
+	SyncDisplayName         bool   `mapstructure:"sync_display_name"`
+	SyncDept                bool   `mapstructure:"sync_dept"`
+	SyncCorpEmailAttrKey    string `mapstructure:"sync_corp_email_attr_key"`
+	SyncDisplayNameAttrKey  string `mapstructure:"sync_display_name_attr_key"`
+	SyncDeptAttrKey         string `mapstructure:"sync_dept_attr_key"`
+	SyncCorpEmailAttrName   string `mapstructure:"sync_corp_email_attr_name"`
+	SyncDisplayNameAttrName string `mapstructure:"sync_display_name_attr_name"`
+	SyncDeptAttrName        string `mapstructure:"sync_dept_attr_name"`
+
+	// 邮箱 + Username
+	RequireEmail            bool   `mapstructure:"require_email"`
+	UsernameOverwritePolicy string `mapstructure:"username_overwrite_policy"`
+
+	// Attribute（私有版扩展点；开源版仅声明）
+	UsernameAttributeKey         string   `mapstructure:"username_attribute_key"`
+	EnableAttributeMatching      bool     `mapstructure:"enable_attribute_matching"`
+	EnableAttributeSync          bool     `mapstructure:"enable_attribute_sync"`
+	AttributeSyncFields          []string `mapstructure:"attribute_sync_fields"`
+	AttributeSyncOverwritePolicy string   `mapstructure:"attribute_sync_overwrite_policy"`
 }
 
 type EmailOAuthProviderConfig struct {
@@ -531,11 +574,35 @@ type CORSConfig struct {
 }
 
 type SecurityConfig struct {
-	URLAllowlist    URLAllowlistConfig   `mapstructure:"url_allowlist"`
-	ResponseHeaders ResponseHeaderConfig `mapstructure:"response_headers"`
-	CSP             CSPConfig            `mapstructure:"csp"`
-	ProxyFallback   ProxyFallbackConfig  `mapstructure:"proxy_fallback"`
-	ProxyProbe      ProxyProbeConfig     `mapstructure:"proxy_probe"`
+	URLAllowlist                     URLAllowlistConfig   `mapstructure:"url_allowlist"`
+	ResponseHeaders                  ResponseHeaderConfig `mapstructure:"response_headers"`
+	CSP                              CSPConfig            `mapstructure:"csp"`
+	ProxyFallback                    ProxyFallbackConfig  `mapstructure:"proxy_fallback"`
+	ProxyProbe                       ProxyProbeConfig     `mapstructure:"proxy_probe"`
+	TrustForwardedIPForAPIKeyACL     bool                 `mapstructure:"trust_forwarded_ip_for_api_key_acl"`
+	trustForwardedIPForAPIKeyACLLive *atomic.Bool         `mapstructure:"-"`
+}
+
+func (c *Config) TrustForwardedIPForAPIKeyACL() bool {
+	if c == nil {
+		return false
+	}
+	live := c.Security.trustForwardedIPForAPIKeyACLLive
+	if live == nil {
+		return c.Security.TrustForwardedIPForAPIKeyACL
+	}
+	return live.Load()
+}
+
+func (c *Config) SetTrustForwardedIPForAPIKeyACL(enabled bool) {
+	if c == nil {
+		return
+	}
+	c.Security.TrustForwardedIPForAPIKeyACL = enabled
+	if c.Security.trustForwardedIPForAPIKeyACLLive == nil {
+		c.Security.trustForwardedIPForAPIKeyACLLive = &atomic.Bool{}
+	}
+	c.Security.trustForwardedIPForAPIKeyACLLive.Store(enabled)
 }
 
 type URLAllowlistConfig struct {
@@ -942,7 +1009,8 @@ type GatewaySchedulingConfig struct {
 	FallbackSelectionMode string `mapstructure:"fallback_selection_mode"`
 
 	// 负载计算
-	LoadBatchEnabled bool `mapstructure:"load_batch_enabled"`
+	LoadBatchEnabled    bool `mapstructure:"load_batch_enabled"`
+	LoadBatchCacheTTLMS int  `mapstructure:"load_batch_cache_ttl_ms"`
 	// 快照桶读取时的 MGET 分块大小
 	SnapshotMGetChunkSize int `mapstructure:"snapshot_mget_chunk_size"`
 	// 快照重建时的缓存写入分块大小
@@ -1321,6 +1389,7 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.Security.ResponseHeaders.AdditionalAllowed = normalizeStringSlice(cfg.Security.ResponseHeaders.AdditionalAllowed)
 	cfg.Security.ResponseHeaders.ForceRemove = normalizeStringSlice(cfg.Security.ResponseHeaders.ForceRemove)
 	cfg.Security.CSP.Policy = strings.TrimSpace(cfg.Security.CSP.Policy)
+	cfg.SetTrustForwardedIPForAPIKeyACL(cfg.Security.TrustForwardedIPForAPIKeyACL)
 	cfg.Log.Level = strings.ToLower(strings.TrimSpace(cfg.Log.Level))
 	cfg.Log.Format = strings.ToLower(strings.TrimSpace(cfg.Log.Format))
 	cfg.Log.ServiceName = strings.TrimSpace(cfg.Log.ServiceName)
@@ -1465,6 +1534,7 @@ func setDefaults() {
 	viper.SetDefault("security.csp.enabled", true)
 	viper.SetDefault("security.csp.policy", DefaultCSPPolicy)
 	viper.SetDefault("security.proxy_probe.insecure_skip_verify", false)
+	viper.SetDefault("security.trust_forwarded_ip_for_api_key_acl", false)
 
 	// Security - disable direct fallback on proxy error
 	viper.SetDefault("security.proxy_fallback.allow_direct_on_error", false)
@@ -1535,6 +1605,19 @@ func setDefaults() {
 	viper.SetDefault("oidc_connect.userinfo_email_path", "")
 	viper.SetDefault("oidc_connect.userinfo_id_path", "")
 	viper.SetDefault("oidc_connect.userinfo_username_path", "")
+
+	// DingTalk Connect OAuth 登录
+	viper.SetDefault("dingtalk_connect.enabled", false)
+	viper.SetDefault("dingtalk_connect.authorize_url", "https://login.dingtalk.com/oauth2/auth")
+	viper.SetDefault("dingtalk_connect.token_url", "https://api.dingtalk.com/v1.0/oauth2/userAccessToken")
+	viper.SetDefault("dingtalk_connect.userinfo_url", "https://api.dingtalk.com/v1.0/contact/users/me")
+	viper.SetDefault("dingtalk_connect.scopes", "openid")
+	viper.SetDefault("dingtalk_connect.frontend_redirect_url", "/auth/dingtalk/callback")
+	viper.SetDefault("dingtalk_connect.dingtalk_app_kind", "internal_app")
+	viper.SetDefault("dingtalk_connect.app_type", "public")
+	viper.SetDefault("dingtalk_connect.corp_restriction_policy", "none")
+	viper.SetDefault("dingtalk_connect.require_email", true)
+	viper.SetDefault("dingtalk_connect.username_overwrite_policy", "if_empty")
 
 	// Database
 	viper.SetDefault("database.host", "localhost")
@@ -1746,6 +1829,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.scheduling.fallback_max_waiting", 100)
 	viper.SetDefault("gateway.scheduling.fallback_selection_mode", "last_used")
 	viper.SetDefault("gateway.scheduling.load_batch_enabled", true)
+	viper.SetDefault("gateway.scheduling.load_batch_cache_ttl_ms", 200)
 	viper.SetDefault("gateway.scheduling.snapshot_mget_chunk_size", 128)
 	viper.SetDefault("gateway.scheduling.snapshot_write_chunk_size", 256)
 	viper.SetDefault("gateway.scheduling.slot_cleanup_interval", 30*time.Second)
@@ -2552,6 +2636,9 @@ func (c *Config) Validate() error {
 	if c.Gateway.Scheduling.FallbackMaxWaiting <= 0 {
 		return fmt.Errorf("gateway.scheduling.fallback_max_waiting must be positive")
 	}
+	if c.Gateway.Scheduling.LoadBatchCacheTTLMS < 0 {
+		return fmt.Errorf("gateway.scheduling.load_batch_cache_ttl_ms must be non-negative")
+	}
 	if c.Gateway.Scheduling.SnapshotMGetChunkSize <= 0 {
 		return fmt.Errorf("gateway.scheduling.snapshot_mget_chunk_size must be positive")
 	}
@@ -2607,6 +2694,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Concurrency.PingInterval < 5 || c.Concurrency.PingInterval > 30 {
 		return fmt.Errorf("concurrency.ping_interval must be between 5-30 seconds")
+	}
+	if err := ValidateDingTalkConfig(c.DingTalk); err != nil {
+		return fmt.Errorf("dingtalk_connect: %w", err)
 	}
 	return nil
 }
