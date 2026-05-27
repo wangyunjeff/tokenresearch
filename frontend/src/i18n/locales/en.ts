@@ -8,11 +8,282 @@ export default {
     switchToDark: 'Switch to Dark Mode',
     dashboard: 'Dashboard',
     login: 'Login',
-    getStarted: 'Get Started',
+    getStarted: 'Log In',
     goToDashboard: 'Go to Dashboard',
     // User-focused value proposition
     heroSubtitle: 'One Key, All AI Models',
     heroDescription: 'No need to manage multiple subscriptions. Access Claude, GPT, Gemini and more with a single API key',
+    landing: {
+      navTagline: 'AI-native research platform',
+      nav: {
+        mission: 'Mission',
+        workflow: 'Workflow',
+        skills: 'Skills',
+        infrastructure: 'Base layer'
+      },
+      badge: {
+        status: 'Coming soon',
+        text: 'TokenResearch is coming soon'
+      },
+      eyebrow: 'AI for Science, From Idea to Publication',
+      titlePrefix: 'Vibe Research for',
+      titleMain: 'Vibe Research',
+      titleConnector: 'for',
+      heroSoft: 'from idea to publication.',
+      researchFields: {
+        machineLearning: 'Machine Learning',
+        dataScience: 'Data Science',
+        computerScience: 'Computer Science',
+        artificialIntelligence: 'Artificial Intelligence',
+        neuralLanguageProcessing: 'Neural Language Processing',
+        computerVision: 'Computer Vision'
+      },
+      researchFieldsLabel:
+        'Machine Learning, Data Science, Computer Science, Artificial Intelligence, Neural Language Processing, and Computer Vision',
+      description:
+        'An AI-Native Vibe Research platform: you stay in control of the science while agents handle the heavy lifting.',
+      heroSignals: {
+        loop: {
+          label: 'Research loop',
+          value: 'idea → paper',
+          description: 'From concept to manuscript'
+        },
+        agent: {
+          label: 'Agent execution',
+          value: 'agentic workflow',
+          description: 'Literature, experiment, analysis'
+        },
+        infra: {
+          label: 'Base resources',
+          value: 'token / GPU',
+          description: 'Model calls and job runs'
+        }
+      },
+      actions: {
+        mission: 'Our Mission'
+      },
+      skillMarquee: {
+        badge: 'Open scientific skill ecosystem',
+        title: 'The early shape of scientific agents is already visible',
+        description:
+          'The valuable unit is not a single prompt. It is a reusable process for literature, ideation, experiments, figures, and writing. These projects form the open ecosystem we watch, absorb, and connect.',
+        signals: {
+          workflow: {
+            label: 'Workflow assets',
+            value: '30+ repos',
+            description: 'Top-level skill repos are grouped by research action instead of fragmented prompt snippets.'
+          },
+          writing: {
+            label: 'Publication layer',
+            value: 'writing layer',
+            description: 'Abstracts, introductions, references, and defense material become part of the research loop.'
+          },
+          execution: {
+            label: 'Experiment execution',
+            value: 'agent + GPU',
+            description: 'Research agents need tools, jobs, and evidence traces, not only a chat interface.'
+          }
+        },
+        github: {
+          label: 'Main project',
+          value: 'ARIS Auto Research',
+          description: 'The homepage points to this open-source entry for automated research workflows.',
+          starsDescription: 'Live GitHub stars, a lightweight signal that automated research workflows are gaining attention.'
+        }
+      },
+      mockupLabel: 'TokenResearch workspace',
+      imageAlt: 'TokenResearch workspace interface',
+      highlights: {
+        literature: 'Search literature',
+        brainstorm: 'Brainstorm',
+        plan: 'Plan experiments',
+        gpu: 'Run GPU jobs',
+        analyze: 'Analyze results',
+        draft: 'Draft publications'
+      },
+      mission: {
+        badge: 'Mission and goal',
+        title: 'Mission: Research at the Speed of Thought',
+        description:
+          'TokenResearch is built for the moment when AI compresses the execution layer of science. Our mission is to keep researchers in control of questions, judgment, taste, and obsession while agents handle the costly work between curiosity and evidence.',
+        operatingBeliefLabel: 'Goal',
+        operatingBelief:
+          'When execution becomes nearly free, researchers can finally move at the speed of thought.',
+        tags: {
+          lowFriction: 'Low-friction',
+          researcherLed: 'Researcher-led',
+          thoughtSpeed: 'Thought-speed'
+        },
+        metrics: {
+          loop: {
+            label: 'Research loop',
+            value: '5 stages',
+            description: 'Literature, ideation, experiment, analysis, writing'
+          },
+          assets: {
+            label: 'Open skills',
+            value: '30+ repos',
+            description: 'Reusable scientific workflows'
+          },
+          role: {
+            label: 'Human role',
+            value: 'judgment',
+            description: 'Problem choice and evidence reading'
+          },
+          infra: {
+            label: 'Base layer',
+            value: 'token / GPU',
+            description: 'Stable calls and job execution'
+          }
+        },
+        principles: {
+          friction: {
+            title: 'Collapse execution friction',
+            description:
+              'Literature review, experiments, analysis, and writing should become cheap enough that researchers can ask bigger questions without waiting weeks for setup.'
+          },
+          judgment: {
+            title: 'Move the bottleneck to judgment',
+            description:
+              'When agents can do more of the work, the human contribution becomes choosing the right problem, reading evidence clearly, and deciding what is worth pursuing.'
+          },
+          taste: {
+            title: 'Amplify taste and obsession',
+            description:
+              'The future researcher is not replaced by automation. They become a conductor who defines quality, follows the important thread, and keeps pushing when the first answers are not enough.'
+          }
+        }
+      },
+      workflow: {
+        badge: '5-stage workflow',
+        title: 'A research loop instead of disconnected tools',
+        description:
+          'From problem discovery to publication, the platform organizes research as one continuous loop. Models, GPUs, tokens, data, and writing are infrastructure in service of that loop.',
+        steps: {
+          literature: {
+            title: 'Literature',
+            description: 'Map prior work and recover the relevant papers faster.'
+          },
+          ideation: {
+            title: 'Ideation',
+            description: 'Turn questions into hypotheses, plans, and candidate directions.'
+          },
+          experiment: {
+            title: 'Experiment',
+            description: 'Run structured workflows and reusable research skills.'
+          },
+          analysis: {
+            title: 'Analysis',
+            description: 'Extract evidence, compare results, and trace reasoning.'
+          },
+          writing: {
+            title: 'Writing',
+            description: 'Draft reports, paper sections, and reproducible handoffs.'
+          }
+        }
+      },
+      capabilities: {
+        badge: 'Core capabilities',
+        title: 'Core capabilities for the TokenResearch workspace',
+        description:
+          'We do not only provide tokens and AI infrastructure. They are the base layer; the real goal is an AI-native workspace for serious scientific research.',
+        items: {
+          literature: {
+            title: 'Literature review',
+            description:
+              'Synthesize prior work, map related papers, and keep reading connected to the active question.'
+          },
+          agent: {
+            title: 'Research agent',
+            description:
+              'Turn broad research goals into structured plans, subproblems, and evidence-backed next steps.'
+          },
+          search: {
+            title: 'AI search',
+            description:
+              'Find relevant papers, methods, and datasets without losing context between tools and tabs.'
+          },
+          extract: {
+            title: 'Extract data',
+            description:
+              'Convert messy papers, notes, or experiment traces into structured facts that can be compared and reused.'
+          },
+          sop: {
+            title: 'SOP skills',
+            description:
+              'Package recurring research workflows into named skills so the best process becomes easy to repeat.'
+          },
+          deepResearch: {
+            title: 'Deep research',
+            description:
+              'Run longer investigations that connect sources, compare evidence, and preserve citations.'
+          },
+          reports: {
+            title: 'Reports',
+            description:
+              'Transform findings into briefings, research memos, and publication-ready narrative artifacts.'
+          },
+          handoffs: {
+            title: 'Research handoffs',
+            description:
+              'Keep decisions, evidence, and procedural knowledge traceable across teammates and future runs.'
+          }
+        }
+      },
+      infrastructure: {
+        badge: 'Infrastructure layer',
+        title: 'Tokens, models, and GPUs are the base layer for the research platform',
+        description:
+          'The unified API gateway, account pools, billing, and job execution remain in the product, but they are no longer the end of the story. They support stable execution for research agents.',
+        cards: {
+          gateway: {
+            title: 'Unified model gateway',
+            description:
+              'Connect Claude, GPT, Gemini and adjacent models through one consistent calling surface.'
+          },
+          token: {
+            title: 'Token and context cost',
+            description:
+              'Turn prompts, caching, long context, and usage cost into observable research-planning signals.'
+          },
+          billing: {
+            title: 'Team billing and access',
+            description:
+              'Set keys, quotas, and scopes by member, project, and workflow so research cost stays bounded.'
+          },
+          gpu: {
+            title: 'GPU job execution',
+            description:
+              'Bring experiments, training runs, and batch jobs into the research loop instead of scattering them across tools.'
+          }
+        }
+      },
+      preview: {
+        label: 'Gateway Control',
+        title: 'Infrastructure runtime panel',
+        live: 'Live',
+        route: 'Select stable upstream capacity for research agents and record usage',
+        researchLabel: 'Research Loop',
+        researchTitle: 'An automated run from question to paper',
+        researchRoute: 'Connect open skills, model calls, GPU jobs, and writing handoffs into one continuous process.',
+        progressLabel: 'stages wired',
+        skillSignal: 'Open skill library',
+        resourceSignal: 'Execution resources',
+        githubSignal: 'Open-source line',
+        costLabel: 'Token cost',
+        latencyLabel: 'Latency',
+        traceLabel: 'Execution trace',
+        traceOne: 'match model policy: Claude / GPT / Gemini',
+        traceTwo: 'select upstream account pool and available quota',
+        traceThree: 'write usage ledger and return stream'
+      },
+      closing: {
+        kicker: 'Start researching',
+        title: 'Give the execution layer to agents. Keep judgment with researchers.',
+        description:
+          'Sign in to enter the workspace, manage the infrastructure layer, and connect literature, experiments, analysis, and writing into one research system.'
+      }
+    },
     tags: {
       subscriptionToApi: 'Subscription to API',
       stickySession: 'Session Persistence',

@@ -1,0 +1,15 @@
+# Docker Compose override for deploying this repository build instead of the
+# upstream published image.
+#
+# Usage from the repository root:
+#   docker compose -f deploy/docker-compose.local.yml -f deploy/docker-compose.build.yml up -d --build
+
+services:
+  sub2api:
+    image: tokenresearch/sub2api:my-prod
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-my-prod}
+        COMMIT: ${COMMIT:-local}

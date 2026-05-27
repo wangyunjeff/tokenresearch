@@ -8,11 +8,268 @@ export default {
     switchToDark: '切换到深色模式',
     dashboard: '控制台',
     login: '登录',
-    getStarted: '立即开始',
+    getStarted: '立即登录',
     goToDashboard: '进入控制台',
     // 新增：面向用户的价值主张
     heroSubtitle: '一个密钥，畅用多个 AI 模型',
     heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务',
+    landing: {
+      navTagline: 'AI 原生科研平台',
+      nav: {
+        mission: '使命',
+        workflow: '流程',
+        skills: '技能库',
+        infrastructure: '底座'
+      },
+      badge: {
+        status: '即将亮相',
+        text: '词元智研即将亮相'
+      },
+      eyebrow: '面向科学的 AI，从想法到发表',
+      titlePrefix: 'Vibe Research 面向',
+      titleMain: 'Vibe Research',
+      titleConnector: '面向',
+      heroSoft: '从想法到发表。',
+      researchFields: {
+        machineLearning: '机器学习',
+        dataScience: '数据科学',
+        computerScience: '计算机科学',
+        artificialIntelligence: '人工智能',
+        neuralLanguageProcessing: '神经语言处理',
+        computerVision: '计算机视觉'
+      },
+      researchFieldsLabel: '机器学习、数据科学、计算机科学、人工智能、神经语言处理和计算机视觉',
+      description:
+        '词元智研是一款 AI 原生的 Vibe Research 平台：科学判断始终由你掌控，繁重流程交给智能体完成。',
+      heroSignals: {
+        loop: {
+          label: '研究闭环',
+          value: 'idea → paper',
+          description: '从构想到论文'
+        },
+        agent: {
+          label: '智能体执行',
+          value: 'agentic workflow',
+          description: '文献、实验、分析'
+        },
+        infra: {
+          label: '底层资源',
+          value: 'token / GPU',
+          description: '模型调用与任务运行'
+        }
+      },
+      actions: {
+        mission: '了解使命'
+      },
+      skillMarquee: {
+        badge: '开放科研技能生态',
+        title: '从技能库看见科研智能体的雏形',
+        description:
+          '真正有价值的不是单个 prompt，而是把文献、构想、实验、图表和写作沉淀成可复用流程。下面这些项目构成了我们观察、吸收和连接的开放生态。',
+        signals: {
+          workflow: {
+            label: '流程资产',
+            value: '30+ repos',
+            description: '顶层 skill/repo 先按研究动作归类，而不是拆成碎片化子提示。'
+          },
+          writing: {
+            label: '论文产出',
+            value: 'writing layer',
+            description: '从摘要、引言、引用格式到答辩材料，写作会成为研究闭环的一部分。'
+          },
+          execution: {
+            label: '实验执行',
+            value: 'agent + GPU',
+            description: '研究智能体需要能调用工具、跑任务、追踪证据，而不是停在聊天框。'
+          }
+        },
+        github: {
+          label: '主线项目',
+          value: 'ARIS Auto Research',
+          description: '词元智研主页会持续指向这个自动化科研方向的开源入口。',
+          starsDescription: 'GitHub 实时 star 数，反映这个自动化科研方向正在被更多人关注。'
+        }
+      },
+      mockupLabel: 'TokenResearch workspace',
+      imageAlt: '词元智研工作台界面',
+      highlights: {
+        literature: '检索文献',
+        brainstorm: '头脑风暴',
+        plan: '规划实验',
+        gpu: '运行 GPU 任务',
+        analyze: '分析结果',
+        draft: '撰写论文'
+      },
+      mission: {
+        badge: '使命与目标',
+        title: '使命：让研究以思维的速度前进',
+        description:
+          '词元智研面向一个新的研究范式：AI 正在压缩科学的执行层。我们的使命，是让研究者继续掌控问题、判断、品味与执念，把从好奇心到证据之间的高成本工作交给智能体完成。',
+        operatingBeliefLabel: '目标',
+        operatingBelief: '当执行变得几乎免费，研究者终于能以思维的速度前进。',
+        tags: {
+          lowFriction: '低摩擦',
+          researcherLed: '研究者主导',
+          thoughtSpeed: '思维速度'
+        },
+        metrics: {
+          loop: {
+            label: '研究闭环',
+            value: '5 stages',
+            description: '文献、构想、实验、分析、写作'
+          },
+          assets: {
+            label: '开放技能',
+            value: '30+ repos',
+            description: '连接可复用科研流程'
+          },
+          role: {
+            label: '人的位置',
+            value: 'judgment',
+            description: '问题选择与证据判断'
+          },
+          infra: {
+            label: '执行底座',
+            value: 'token / GPU',
+            description: '稳定调用与任务运行'
+          }
+        },
+        principles: {
+          friction: {
+            title: '压缩执行摩擦',
+            description:
+              '文献、实验、分析与写作都应变得足够便宜，让研究者不再因为流程成本而放弃更大的问题。'
+          },
+          judgment: {
+            title: '把瓶颈交还给判断',
+            description:
+              '当智能体能够承担更多执行，人的价值就转向提出正确问题、读懂证据，并判断什么方向真正值得追。'
+          },
+          taste: {
+            title: '放大品味与执念',
+            description:
+              '未来的研究者不会被自动化替代，而会成为指挥者：定义什么是好的，追踪真正重要的线索，并在前几次失败后继续推进。'
+          }
+        }
+      },
+      workflow: {
+        badge: '五阶段研究流程',
+        title: '用完整研究闭环替代割裂工具',
+        description:
+          '从问题发现到论文产出，平台把研究动作组织成连续流程；模型、GPU、Token、数据和写作都只是服务这个目标的基础设施。',
+        steps: {
+          literature: {
+            title: '文献',
+            description: '更快梳理前人工作，找回真正相关的论文。'
+          },
+          ideation: {
+            title: '构想',
+            description: '把问题转化为假设、计划和候选研究方向。'
+          },
+          experiment: {
+            title: '实验',
+            description: '运行结构化流程，并复用沉淀好的研究技能。'
+          },
+          analysis: {
+            title: '分析',
+            description: '抽取证据、比较结果，并保留推理链路。'
+          },
+          writing: {
+            title: '写作',
+            description: '生成报告、论文段落和可复现的研究交接材料。'
+          }
+        }
+      },
+      capabilities: {
+        badge: '核心能力',
+        title: '词元智研工作台的核心能力',
+        description:
+          '我们不只提供 Token 和 AI 基础设施。它们是底座，最终目的是让研究者在一个工作台里完成严肃科研流程。',
+        items: {
+          literature: {
+            title: '文献综述',
+            description: '综合已有工作，绘制相关论文地图，并让阅读始终围绕当前问题展开。'
+          },
+          agent: {
+            title: '研究智能体',
+            description: '把宽泛研究目标拆解为结构化计划、子问题和有证据支撑的下一步。'
+          },
+          search: {
+            title: 'AI 搜索',
+            description: '在不丢失上下文的前提下，查找相关论文、方法和数据集。'
+          },
+          extract: {
+            title: '数据抽取',
+            description: '将论文、笔记或实验轨迹中的混乱信息转成可比较、可复用的结构化事实。'
+          },
+          sop: {
+            title: 'SOP 技能',
+            description: '把重复出现的研究流程封装为命名技能，让最佳流程更容易复用。'
+          },
+          deepResearch: {
+            title: '深度研究',
+            description: '运行更长周期的调查，连接来源、比较证据，并保留引用。'
+          },
+          reports: {
+            title: '报告生成',
+            description: '把发现转化为简报、研究备忘录和接近发表质量的叙事材料。'
+          },
+          handoffs: {
+            title: '研究交接',
+            description: '让决策、证据和流程知识在团队成员与未来运行中保持可追踪。'
+          }
+        }
+      },
+      infrastructure: {
+        badge: '基础设施层',
+        title: 'Token、模型和 GPU 是研究平台的底座',
+        description:
+          '统一 API 中转、账号池、计费和任务运行能力仍然保留，但它们不再是主页叙事的终点，而是支撑科研智能体稳定执行的底层能力。',
+        cards: {
+          gateway: {
+            title: '统一模型网关',
+            description: '用同一个入口接入 Claude、GPT、Gemini 等模型，并保持调用方式一致。'
+          },
+          token: {
+            title: 'Token 与上下文成本',
+            description: '把 prompt、缓存、长上下文和用量成本变成可观察、可规划的研究变量。'
+          },
+          billing: {
+            title: '团队计费与权限',
+            description: '按成员、项目和工作流设置密钥、额度和访问范围，避免成本失控。'
+          },
+          gpu: {
+            title: 'GPU 任务运行',
+            description: '把实验、训练和批处理任务纳入研究闭环，而不是散落在不同工具里。'
+          }
+        }
+      },
+      preview: {
+        label: 'Gateway Control',
+        title: '基础设施运行面板',
+        live: '运行中',
+        route: '为研究智能体选择稳定上游并记录用量',
+        researchLabel: 'Research Loop',
+        researchTitle: '一条从问题到论文的自动化运行轨迹',
+        researchRoute: '把开放技能、模型调用、GPU 任务和写作交接串成连续流程。',
+        progressLabel: '阶段已接入',
+        skillSignal: '开放技能库',
+        resourceSignal: '执行资源',
+        githubSignal: '开源主线',
+        costLabel: 'Token 成本',
+        latencyLabel: '响应延迟',
+        traceLabel: '执行链路',
+        traceOne: '匹配模型策略：Claude / GPT / Gemini',
+        traceTwo: '选择上游账号池与可用额度',
+        traceThree: '写入用量账本并返回流式结果'
+      },
+      closing: {
+        kicker: '开始研究',
+        title: '把执行层交给智能体，把判断力留给研究者。',
+        description:
+          '登录后即可进入工作台，管理基础设施能力，并把文献、实验、分析和写作串成一个连续的研究系统。'
+      }
+    },
     tags: {
       subscriptionToApi: '订阅转 API',
       stickySession: '会话保持',
